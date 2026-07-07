@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# cdp — uruchom Claude Code CLI (NIE Claude Desktop). Wariant POSIX (macOS/Linux) dla open-source.
+# Rozwiązanie ścieżki: CLAUDE_EXE → `claude` z PATH.
+# Tryby: `cdp --which` | `cdp -p "<prompt>"` (headless) | `cdp ["<nazwa sesji>"]` (interaktywny).
+set -euo pipefail
+
+resolve() {
+  if [ -n "${CLAUDE_EXE:-}" ] && [ -x "$CLAUDE_EXE" ]; then echo "$CLAUDE_EXE"; return; fi
+  if command -v claude >/dev/null 2>&1; then command -v claude; return; fi
+  echo "Nie znaleziono Claude Code (claude). Ustaw CLAUDE_EXE." >&2; exit 1
+}
+
+exe="$(resolve)"
+
+if [ "${1:-}" = "--which" ]; then echo "$exe"; exit 0; fi
+
+case " $* " in
+  *" -p "*|*" --print "*) exec "$exe" "$@" --dangerously-skip-permissions ;;
+esac
+
+exec "$exe" --dangerously-skip-permissions --remote-control "${1:-$(date '+%Y-%m-%d %H:%M:%S')}"

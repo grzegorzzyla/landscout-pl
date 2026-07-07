@@ -1,0 +1,429 @@
+---
+export const prerender = false;
+import { readAllListings } from '../server/listings';
+import Base from '../layouts/Base.astro';
+
+// Odczyt wprost z .md na każde żądanie (bez content-layer cache) — kształt {data} zachowany dla szablonu.
+const entries = readAllListings().map((l) => ({ data: l }));
+
+const statusRank = { favorite: 0, watch: 1, active: 2, inactive: 3 };
+entries.sort((a, b) => {
+  const s = (statusRank[a.data.status] ?? 9) - (statusRank[b.data.status] ?? 9);
+  if (s !== 0) return s;
+  return (b.data.score ?? -1) - (a.data.score ?? -1);
+});
+
+const thumb = (d) =>
+  d.cover ? '/' + d.cover : (d.photos?.length ? '/' + d.photos[0] : (d.images?.length ? d.images[0] : ''));
+
+const fmtPLN = (n) => (n == null ? '—' : n.toLocaleString('pl-PL') + ' zł');
+const fmtNum = (n) => (n == null ? '—' : n.toLocaleString('pl-PL'));
+
+const points = entries
+  .filter((e) => e.data.lat != null && e.data.lon != null)
+  .map((e) => ({
+    id: e.data.id,
+    lat: e.data.lat,
+    lon: e.data.lon,
+    approx: e.data.coords_approx !== false,
+    status: e.data.status,
+    title: e.data.title ?? '(bez tytułu)',
+    price: fmtPLN(e.data.price),
+    area: e.data.area_m2 ? fmtNum(e.data.area_m2) + ' m²' : '—',
+    score: e.data.score ?? null,
+    photo: thumb(e.data),
+  }));
+
+const center = points.length
+  ? [points.reduce((s, p) => s + p.lat, 0) / points.length, points.reduce((s, p) => s + p.lon, 0) / points.length]
+  : [51.1, 17.03];
+
+const scoreClass = (s) => (s == null ? 's-na' : s >= 75 ? 's-hi' : s >= 50 ? 's-mid' : 's-lo');
+
+// znane tagi ze wszystkich ofert — do filtra „tagi" (zaznaczenie = AND)
+const allTags = [...new Set(entries.flatMap((e) => e.data.tags ?? []))].sort((a, b) => a.localeCompare(b, 'pl'));
+---
+<Base title={`Działki (${entries.length})`}>
+  <header>
+    <button class="iconbtn" id="hamb" type="button" aria-label="Menu">☰</button>
+    <h1>🌱 Działki <span class="muted">({entries.length})</span></h1>
+    <input id="q" type="search" placeholder="szukaj: tytuł / miejscowość / nr oferty / nr działki" />
+    <span id="filters-desc" class="filters-desc"></span>
+    <button class="btn ghost" id="open-filters" type="button">Filtry</button>
+  </header>
+
+  <div id="menu" class="menu" hidden>
+    <button data-act="add" type="button">➕ Dodaj z linku</button>
+    <button data-act="search" type="button">🔎 Szukaj w sieci</button>
+    <a href="/api/auth/logout">🚪 Wyloguj</a>
+  </div>
+
+  <div id="filters-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3>Filtry</h3>
+      <label>Status
+        <select id="f-status">
+          <option value="">wszystkie (też nieaktywne)</option>
+          <option value="active" selected>aktywne i wyżej</option>
+          <option value="watch">👁 obserwowane i wyżej</option>
+          <option value="favorite">⭐ tylko ulubione</option>
+        </select>
+      </label>
+      <label>Źródło
+        <select id="f-source">
+          <option value="">wszystkie</option>
+          <option value="olx">OLX</option>
+          <option value="otodom">Otodom</option>
+          <option value="gethome">gethome</option>
+          <option value="geoportal">geoportal</option>
+        </select>
+      </label>
+      <label>Cena maks. (zł)<input id="f-price" type="number" placeholder="bez limitu" /></label>
+      <label>Powierzchnia min. (m²)<input id="f-area" type="number" placeholder="bez limitu" /></label>
+      {allTags.length > 0 && (
+        <div class="fld">
+          <span class="fld-cap">Tagi <span class="muted">(pokaże oferty ze wszystkimi zaznaczonymi)</span></span>
+          <div id="f-tags" class="tag-filter">
+            {allTags.map((t) => (
+              <label class="tag-check"><input type="checkbox" value={t} />{t}</label>
+            ))}
+          </div>
+        </div>
+      )}
+      <label>Sortuj
+        <select id="f-sort">
+          <option value="score">ocena</option>
+          <option value="added">data dodania</option>
+          <option value="updated">data aktualizacji</option>
+        </select>
+      </label>
+      <label style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="f-dd" style="width:auto; margin:0;" /> Tylko z deep-dive 🔬
+      </label>
+      <div class="row" style="justify-content:flex-end; gap:8px;">
+        <button class="btn ghost" id="filters-cancel" type="button">Anuluj</button>
+        <button class="btn" id="filters-apply" type="button">Zatwierdź</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="addlink-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3>Dodaj ofertę z linku</h3>
+      <input id="add-url" type="url" placeholder="link OLX / Otodom / gethome" />
+      <div class="row" style="justify-content:flex-end; gap:8px;">
+        <button class="btn ghost" id="addlink-cancel" type="button">Anuluj</button>
+        <button class="btn" id="addlink-ok" type="button">Zatwierdź</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="map-wrap">
+    <button class="map-fs" data-map-fs type="button">⛶ pełny ekran</button>
+    <div id="map"></div>
+  </div>
+
+  <main>
+    <div class="count" id="count"></div>
+    <div class="grid" id="grid">
+      {entries.map((e) => {
+        const d = e.data;
+        const t = thumb(d);
+        return (
+          <article
+            class={`card${d.seen ? '' : ' unseen'}`}
+            data-id={d.id}
+            data-status={d.status}
+            data-source={d.source ?? ''}
+            data-price={d.price ?? ''}
+            data-area={d.area_m2 ?? ''}
+            data-dd={d.deep_dive?.date ? '1' : ''}
+            data-score={d.score ?? ''}
+            data-added={d.date_added ?? ''}
+            data-updated={d.date_updated ?? ''}
+            data-tags={JSON.stringify(d.tags ?? [])}
+            data-text={[
+              d.title ?? '', d.location?.city ?? '',
+              d.id ?? '',                                              // pełne id, np. 20260629_051
+              d.id ? d.id.split('_')[1] : '',                          // numer oferty, np. 051
+              d.id ? String(parseInt(d.id.split('_')[1], 10)) : '',    // bez zer wiodących, np. 51
+              d.id ? '#' + d.id.split('_')[1] : '',                    // forma #051
+              d.parcel?.parcel_no ?? '',                               // numery działek, np. 319/5, 319/6
+            ].join(' ').toLowerCase()}
+          >
+            <a href={`/dzialka/${d.id}`}>
+              <div class="thumb" style={t ? `background-image:url('${t}')` : ''}></div>
+            </a>
+            <div class="body">
+              <div class="row">
+                <span class={`score ${scoreClass(d.score)}`}>{d.score ?? '—'}</span>
+                <span class={`st st-${d.status}`}>{d.status}</span>
+                {d.url && d.source_type !== 'geoportal' && (
+                  <a class="portal" href={d.url} target="_blank" rel="noopener">{d.source ?? 'ogłoszenie'} ↗</a>
+                )}
+              </div>
+              <a href={`/dzialka/${d.id}`}><div class="title">{d.title ?? '(bez tytułu)'}</div></a>
+              <div class="row">
+                <span class="price">{fmtPLN(d.price)}</span>
+                <span class="muted">{d.area_m2 ? fmtNum(d.area_m2) + ' m²' : '—'}</span>
+              </div>
+              {d.land_type && <div class="muted" style="font-size:12px;">rodzaj: <b style="color:var(--text)">{d.land_type}</b></div>}
+              <div class="chips">
+                <span class="idtag">#{d.id}</span>
+                {!d.seen && <span class="seen-dot" title="jeszcze nieobejrzane">● nowe</span>}
+                {d.kind === 'dom' && <span class="chip chip-dom">🏠 dom</span>}
+                <span class="chip">{d.location?.city ?? '—'}</span>
+                {d.price_per_m2 && <span class="chip">{fmtNum(d.price_per_m2)} zł/m²</span>}
+                <span class="chip">{d.source ?? '—'}</span>
+                {d.deep_dive?.date && <span class="chip-dd">🔬 deep-dive</span>}
+              </div>
+              <div class="mini" data-id={d.id}>
+                <button class={`sbtn${d.status === 'active' ? ' on' : ''}`} data-st="active" type="button" title="Aktywna">A</button>
+                <button class={`sbtn${d.status === 'watch' ? ' on' : ''}`} data-st="watch" type="button" title="Obserwowana">👁</button>
+                <button class={`sbtn${d.status === 'favorite' ? ' on' : ''}`} data-st="favorite" type="button" title="Ulubiona">⭐</button>
+                <button class={`sbtn${d.status === 'inactive' ? ' on' : ''}`} data-st="inactive" type="button" title="Nieaktywna">✕</button>
+              </div>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  </main>
+
+  <Fragment slot="scripts">
+  <script type="application/json" id="points-data" set:html={JSON.stringify(points)}></script>
+  <script define:vars={{ center }}>
+    const points = JSON.parse(document.getElementById('points-data').textContent);
+    const map = L.map('map').setView(center, points.length ? 11 : 10);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '© OpenStreetMap',
+    }).addTo(map);
+
+    const color = (s) => (s == null ? '#9aa3b2' : s >= 75 ? '#39c07a' : s >= 50 ? '#e0a64a' : '#e0574a');
+    const markers = {};
+    points.forEach((p) => {
+      const m = L.circleMarker([p.lat, p.lon], {
+        radius: 8, color: '#0f1115', weight: 2, fillColor: color(p.score), fillOpacity: p.approx ? 0.55 : 0.95,
+      }).addTo(map);
+      m.bindPopup(
+        (p.photo ? `<a href="/dzialka/${p.id}" target="_blank" rel="noopener"><img src="${p.photo}" class="popimg" alt=""></a>` : '') +
+        `<b>${p.title}</b><br>${p.price} · ${p.area}` +
+        (p.score != null ? `<br>ocena: ${p.score}` : '') +
+        (p.approx ? '<br><i>lokalizacja przybliżona</i>' : '') +
+        `<br><a href="/dzialka/${p.id}" target="_blank" rel="noopener">szczegóły →</a>`,
+        { minWidth: 200 }
+      );
+      markers[p.id] = m;
+    });
+
+    // --- filtry ---
+    const q = document.getElementById('q');
+    const fStatus = document.getElementById('f-status');
+    const fSource = document.getElementById('f-source');
+    const fPrice = document.getElementById('f-price');
+    const fArea = document.getElementById('f-area');
+    const fSort = document.getElementById('f-sort');
+    const fDd = document.getElementById('f-dd');
+    // hierarchia statusów (progresywny filtr): inactive < active < watch < favorite
+    const RANK = { inactive: 0, active: 1, watch: 2, favorite: 3 };
+    const grid = document.getElementById('grid');
+    const cards = [...document.querySelectorAll('.card')];
+    const count = document.getElementById('count');
+    // tagi każdego kafelka (lowercase) — do filtra AND; policzone raz
+    cards.forEach((c) => {
+      try { c._tags = (JSON.parse(c.dataset.tags || '[]')).map((t) => t.toLowerCase()); }
+      catch (e) { c._tags = []; }
+    });
+    const selectedTags = () => [...document.querySelectorAll('#f-tags input:checked')].map((i) => i.value);
+
+    // zachowanie stanu filtrów + pozycji między wejściem w ofertę a powrotem
+    const FKEY = 'plots:filters', SKEY = 'plots:scroll';
+    try {
+      const s = JSON.parse(sessionStorage.getItem(FKEY) || '{}');
+      if (s.q != null) q.value = s.q;
+      if (s.status != null) fStatus.value = s.status;
+      if (s.source != null) fSource.value = s.source;
+      if (s.price != null) fPrice.value = s.price;
+      if (s.area != null) fArea.value = s.area;
+      if (s.sort != null) fSort.value = s.sort;
+      if (s.dd != null) fDd.checked = s.dd;
+      if (Array.isArray(s.tags)) document.querySelectorAll('#f-tags input').forEach((i) => { i.checked = s.tags.includes(i.value); });
+    } catch (e) {}
+    const saveFilters = () => sessionStorage.setItem(FKEY, JSON.stringify({
+      q: q.value, status: fStatus.value, source: fSource.value, price: fPrice.value, area: fArea.value,
+      sort: fSort.value, dd: fDd.checked, tags: selectedTags(),
+    }));
+
+    // sortowanie kafelków (malejąco: najwyższa ocena / najnowsza data u góry)
+    function sortCards() {
+      const key = fSort.value;
+      [...cards].sort((a, b) => {
+        if (key === 'score') return (+(b.dataset.score || -1)) - (+(a.dataset.score || -1));
+        return (b.dataset[key] || '').localeCompare(a.dataset[key] || '');
+      }).forEach((c) => grid.appendChild(c));
+    }
+
+    function apply() {
+      const text = q.value.trim().toLowerCase();
+      const st = fStatus.value, src = fSource.value;
+      const maxP = fPrice.value ? +fPrice.value : null;
+      const minA = fArea.value ? +fArea.value : null;
+      const onlyDd = fDd.checked;
+      const selTags = selectedTags().map((t) => t.toLowerCase());
+      let shown = 0;
+      cards.forEach((c) => {
+        const d = c.dataset;
+        let ok = true;
+        // progresywny filtr statusu: pokazuje wybrany poziom i wyższe (np. "aktywne" = active+watch+favorite)
+        if ((RANK[d.status] ?? 0) < (st ? (RANK[st] ?? 0) : 0)) ok = false;
+        if (src && d.source !== src) ok = false;
+        if (maxP != null && d.price && +d.price > maxP) ok = false;
+        if (minA != null && d.area && +d.area < minA) ok = false;
+        if (onlyDd && d.dd !== '1') ok = false;
+        // tagi: oferta musi mieć WSZYSTKIE zaznaczone tagi (AND)
+        if (selTags.length && !selTags.every((t) => c._tags.includes(t))) ok = false;
+        if (text && !d.text.includes(text)) ok = false;
+        c.classList.toggle('hidden', !ok);
+        const mk = markers[d.id];
+        if (mk) { ok ? mk.addTo(map) : map.removeLayer(mk); }
+        if (ok) shown++;
+      });
+      count.textContent = `Pokazano ${shown} z ${cards.length}`;
+      saveFilters();
+    }
+    // opis aktywnych filtrów na belce (tylko te ustawione)
+    const STATUS_LABEL = { '': '', active: 'aktywne i wyżej', watch: '👁 obserwowane i wyżej', favorite: '⭐ tylko ulubione' };
+    const SORT_LABEL = { score: '', added: 'wg daty dodania', updated: 'wg daty aktualizacji' };
+    function updateDesc() {
+      const parts = [];
+      if (fStatus.value) parts.push(STATUS_LABEL[fStatus.value]);
+      if (fSource.value) parts.push(fSource.value.toUpperCase());
+      if (fPrice.value) parts.push('≤ ' + (+fPrice.value).toLocaleString('pl-PL') + ' zł');
+      if (fArea.value) parts.push('≥ ' + (+fArea.value).toLocaleString('pl-PL') + ' m²');
+      if (fDd.checked) parts.push('z deep-dive 🔬');
+      const selTags = selectedTags();
+      if (selTags.length) parts.push('🏷️ ' + selTags.join(' + '));
+      if (SORT_LABEL[fSort.value]) parts.push(SORT_LABEL[fSort.value]);
+      document.getElementById('filters-desc').textContent = parts.length ? parts.join(' · ') : 'wszystkie';
+    }
+    // szukajka działa na żywo; pozostałe filtry zatwierdzane w popupie „Filtry"
+    q.addEventListener('input', apply);
+    sortCards();
+    apply();
+    updateDesc();
+
+    // Zapamiętywanie pozycji przewinięcia. Cel: po otwarciu oferty (szczegóły LUB link do portalu w nowej
+    // karcie) powrót na listę ma wrócić DOKŁADNIE tam — także gdy mobilna przeglądarka zwolni kartę w tle
+    // i przeładuje stronę. Dlatego: (1) klik w ofertę zapamiętuje kafelek, (2) zwykłe przewijanie zapisuje
+    // pozycję na bieżąco (debounce), (3) zapis także przy chowaniu karty, (4) przywracanie również po pełnym
+    // reloadzie, nie tylko z bfcache. NIE czyścimy zapisu po załadowaniu (kasowało powrót po reloadzie).
+    history.scrollRestoration = 'manual';
+    let clickedId = '';
+    let restoring = false, st;
+    const saveScroll = () => {
+      try { sessionStorage.setItem(SKEY, JSON.stringify({ id: clickedId, y: window.scrollY })); } catch (e) {}
+    };
+    window.addEventListener('scroll', () => {
+      if (restoring) return;
+      clickedId = '';  // ręczne przewijanie = nie wracamy już do konkretnego kafelka, tylko do pozycji Y
+      clearTimeout(st); st = setTimeout(saveScroll, 150);
+    }, { passive: true });
+    // klik w ofertę (szczegóły albo link do portalu ↗) — zapamiętaj kafelek, by wrócić dokładnie do niego
+    document.getElementById('grid').addEventListener('click', (e) => {
+      const a = e.target.closest('a[href^="/dzialka/"], a.portal');
+      if (!a) return;
+      clickedId = a.closest('.card')?.dataset.id || '';
+      saveScroll();
+    });
+    // przywróć pozycję: do klikniętej oferty (jeśli widoczna), inaczej do zapisanego scrolla
+    const restoreScroll = () => {
+      let s; try { s = JSON.parse(sessionStorage.getItem(SKEY) || 'null'); } catch (e) {}
+      if (!s) return;
+      restoring = true;
+      const card = s.id && document.querySelector(`.card[data-id="${s.id}"]`);
+      if (card && !card.classList.contains('hidden')) card.scrollIntoView({ block: 'center' });
+      else window.scrollTo(0, s.y || 0);
+      clearTimeout(st); setTimeout(() => { restoring = false; }, 150);
+    };
+    requestAnimationFrame(restoreScroll);
+    window.addEventListener('load', restoreScroll);  // ponów po doładowaniu zdjęć (layout mógł się przesunąć)
+    window.addEventListener('pageshow', (e) => { if (e.persisted) apply(); restoreScroll(); });
+    window.addEventListener('pagehide', saveScroll);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveScroll(); });
+
+    // --- hamburger menu ---
+    const menu = document.getElementById('menu');
+    const hamb = document.getElementById('hamb');
+    hamb.addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
+    document.addEventListener('click', (e) => {
+      if (!menu.hidden && !menu.contains(e.target) && e.target !== hamb) menu.hidden = true;
+    });
+
+    // --- modal filtrów (zatwierdzane jawnie przyciskiem) ---
+    const filtersModal = document.getElementById('filters-modal');
+    const snap = () => ({ status: fStatus.value, source: fSource.value, price: fPrice.value, area: fArea.value, sort: fSort.value, dd: fDd.checked, tags: selectedTags() });
+    const restoreSnap = (s) => { fStatus.value = s.status; fSource.value = s.source; fPrice.value = s.price; fArea.value = s.area; fSort.value = s.sort; fDd.checked = s.dd;
+      document.querySelectorAll('#f-tags input').forEach((i) => { i.checked = (s.tags || []).includes(i.value); }); };
+    let filtersSnapshot = null;
+    const closeFilters = (revert) => { if (revert && filtersSnapshot) restoreSnap(filtersSnapshot); filtersModal.hidden = true; };
+    document.getElementById('open-filters').addEventListener('click', () => { filtersSnapshot = snap(); filtersModal.hidden = false; });
+    document.getElementById('filters-cancel').addEventListener('click', () => closeFilters(true));
+    filtersModal.addEventListener('click', (e) => { if (e.target === filtersModal) closeFilters(true); });
+    document.getElementById('filters-apply').addEventListener('click', () => { sortCards(); apply(); updateDesc(); closeFilters(false); });
+
+    // --- modal „dodaj z linku" ---
+    const addlinkModal = document.getElementById('addlink-modal');
+    const addUrl = document.getElementById('add-url');
+    const addlinkOk = document.getElementById('addlink-ok');
+    document.getElementById('addlink-cancel').addEventListener('click', () => (addlinkModal.hidden = true));
+    addlinkModal.addEventListener('click', (e) => { if (e.target === addlinkModal) addlinkModal.hidden = true; });
+    addlinkOk.addEventListener('click', () => {
+      const url = addUrl.value.trim();
+      if (!/^https?:\/\//i.test(url)) { window.assistantToast('Podaj poprawny link http(s)', { err: true, hide: 5000 }); return; }
+      addlinkModal.hidden = true;
+      window.runJob('/api/add', { url }, 'Dodawanie oferty z linku');
+    });
+    addUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') addlinkOk.click(); });
+
+    // --- akcje menu ---
+    menu.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-act]'); if (!b) return;
+      menu.hidden = true;
+      if (b.dataset.act === 'add') { addUrl.value = ''; addlinkModal.hidden = false; addUrl.focus(); }
+      else if (b.dataset.act === 'search') {
+        const uwagi = (window.prompt('Uwagi do wyszukiwania (opcjonalnie) — np. „tylko Walim i Głuszyca", „domy do 500 tys", „nacisk na ciszę i las". Pusto = wg kryteriów.', '') || '').trim();
+        window.runJob('/api/search', { uwagi }, uwagi ? `Szukam: ${uwagi}` : 'Szukam w sieci (to potrwa kilka minut)', { reloadDelay: 4000 });
+      }
+    });
+
+    // Esc zamyka menu/modale
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if (!filtersModal.hidden) closeFilters(true);
+      if (!addlinkModal.hidden) addlinkModal.hidden = true;
+      if (!menu.hidden) menu.hidden = true;
+    });
+
+    // zmiana statusu z kafelka (⭐ na karcie bez deep-dive wyzwala deep-dive)
+    document.getElementById('grid').addEventListener('click', (e) => {
+      const b = e.target.closest('.sbtn');
+      if (!b) return;
+      const card = b.closest('.card');
+      window.setStatus(card?.dataset.id, b.dataset.st, {
+        deepdiveIfNone: b.dataset.st === 'favorite' && card?.dataset.dd !== '1',
+      });
+    });
+
+    // mapa pełny ekran (klasa .fs — działa też na mobile)
+    const wrap = document.querySelector('.map-wrap');
+    const fsBtn = document.querySelector('[data-map-fs]');
+    function toggleMapFs(on) {
+      wrap.classList.toggle('fs', on);
+      if (fsBtn) fsBtn.textContent = wrap.classList.contains('fs') ? '✕ zamknij' : '⛶ pełny ekran';
+      setTimeout(() => map.invalidateSize(), 120);
+    }
+    fsBtn?.addEventListener('click', () => toggleMapFs(!wrap.classList.contains('fs')));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('fs')) toggleMapFs(false); });
+  </script>
+  </Fragment>
+</Base>

@@ -1,0 +1,398 @@
+---
+export const prerender = false;
+import { readListing, readAllListings, renderMarkdown } from '../../server/listings';
+import Base from '../../layouts/Base.astro';
+
+// Odczyt wprost z .md na każde żądanie — zawsze świeże po mutacji (status/notatki/deep-dive/tagi).
+const d = readListing(Astro.params.id ?? '');
+if (!d) return new Response('Nie znaleziono oferty', { status: 404 });
+const tags: string[] = d.tags ?? [];
+// znane tagi ze wszystkich ofert — do podpowiedzi w edytorze tagów
+const allTags = [...new Set(readAllListings().flatMap((l) => l.tags ?? []))].sort((a, b) => a.localeCompare(b, 'pl'));
+const bodyHtml = renderMarkdown(d._body);
+
+const fmtPLN = (n) => (n == null ? '—' : n.toLocaleString('pl-PL') + ' zł');
+const fmtNum = (n) => (n == null ? '—' : n.toLocaleString('pl-PL'));
+const photos = d.photos?.length ? d.photos.map((p) => '/' + p) : (d.images ?? []);
+const mapPhoto = d.map_photo ? '/' + d.map_photo : null;
+const mapIdx = d.map_photo && d.photos ? d.photos.indexOf(d.map_photo) : -1;
+const ddDate = d.deep_dive?.date ?? null;
+const notes = d.notes ?? [];
+const parcel = d.parcel ?? null;
+
+const mediaIcon = (v) => (v === true || v === 'tak' ? '✓' : v == null || v === false ? '—' : String(v));
+const point = d.lat != null && d.lon != null ? { lat: d.lat, lon: d.lon, approx: d.coords_approx !== false } : null;
+---
+<Base title={d.title ?? d.id}>
+  <header>
+    <a class="back" href="/">← wszystkie działki</a>
+    <h1 style="font-size:16px;">{d.title ?? '(bez tytułu)'}</h1>
+    <span class="idtag" style="margin-left:8px;">nr oferty: {d.id}</span>
+    <span class={`st st-${d.status}`} style="margin-left:8px;">{d.status}</span>
+  </header>
+
+  <main class="detail">
+    <div class="row" style="align-items:flex-end;">
+      <div>
+        <div class="price" style="font-size:24px;">{fmtPLN(d.price)}</div>
+        <div class="muted">
+          {d.area_m2 ? fmtNum(d.area_m2) + ' m²' : '—'}
+          {d.price_per_m2 ? ` · ${fmtNum(d.price_per_m2)} zł/m²` : ''}
+          {d.location?.city ? ` · ${d.location.city}` : ''}
+        </div>
+      </div>
+      {d.score != null && <span class="score s-hi" style="font-size:16px;">ocena {d.score}</span>}
+    </div>
+
+    <div class="panel statusbar">
+      <span class="muted">Status:</span>
+      <button class={`sbtn${d.status === 'active' ? ' on' : ''}`} data-st="active" type="button">Aktywna</button>
+      <button class={`sbtn${d.status === 'watch' ? ' on' : ''}`} data-st="watch" type="button">👁 Obserwowana</button>
+      <button class={`sbtn${d.status === 'favorite' ? ' on' : ''}`} data-st="favorite" type="button">⭐ Ulubiona</button>
+      <button class={`sbtn${d.status === 'inactive' ? ' on' : ''}`} data-st="inactive" type="button">✕ Nieaktywna</button>
+      <span style="flex:1;"></span>
+      {ddDate
+        ? <span class="badge-dd">🔬 deep-dive: {ddDate}</span>
+        : <span class="badge-dd no">bez deep-dive</span>}
+      <button class="btn ghost" id="dd-run" type="button">{ddDate ? 'Odśwież deep-dive' : 'Uruchom deep-dive'}</button>
+    </div>
+
+    <div class="panel">
+      <div class="row" style="margin-bottom:6px;">
+        <strong>🏷️ Tagi</strong>
+        <button class="btn ghost" id="tags-edit-btn" type="button">Edytuj tagi</button>
+      </div>
+      <div class="tags-view" id="tags-view">
+        {tags.length === 0 && <span class="muted">Brak tagów.</span>}
+        {tags.map((t) => <span class="tag">{t}</span>)}
+      </div>
+    </div>
+
+    {photos.length > 0 && (
+      <div class="panel">
+        <div class="gallery">
+          {photos.map((src, i) => <img src={src} loading="lazy" alt="" data-idx={i} />)}
+        </div>
+      </div>
+    )}
+
+    <div class="panel">
+      <dl class="kv">
+        <dt>Źródło</dt><dd>{d.source} {d.source_type === 'geoportal' ? '(geoportal)' : ''}
+          {d.url && <> · <a href={d.url} target="_blank" rel="noopener">otwórz ogłoszenie →</a></>}</dd>
+        <dt>Lokalizacja</dt><dd>{[d.location?.address, d.location?.city, d.location?.region].filter(Boolean).join(', ') || '—'}
+          {point?.approx && <span class="muted"> (współrzędne przybliżone)</span>}</dd>
+        <dt>Typ</dt><dd>{d.kind === 'dom' ? '🏠 dom / siedlisko' : 'działka'}{d.plot_type ? ` · ${d.plot_type}` : ''}</dd>
+        <dt>{d.kind === 'dom' ? 'Działka (teren)' : 'Powierzchnia'}</dt><dd>{d.area_m2 ? fmtNum(d.area_m2) + ' m²' : '—'}</dd>
+        <dt>Rodzaj</dt><dd>{d.land_type ?? '—'}</dd>
+        <dt>Transakcja</dt><dd>{d.transaction === 'rent' ? 'wynajem' : 'sprzedaż'}</dd>
+        <dt>Właściciel</dt><dd>{d.owner_type ?? '—'}</dd>
+        <dt>Kontakt</dt><dd>{[d.contact?.name, d.contact?.phone, d.contact?.email].filter(Boolean).join(' · ') || '—'}</dd>
+        <dt>MPZP</dt><dd>{d.mpzp?.status ?? '—'}{d.mpzp?.link && <> · <a href={d.mpzp.link} target="_blank" rel="noopener">plan →</a></>}
+          {d.mpzp?.note ? ` (${d.mpzp.note})` : ''}</dd>
+        <dt>Media</dt><dd>prąd {mediaIcon(d.media?.prad)} · woda {mediaIcon(d.media?.woda)} · kanalizacja {mediaIcon(d.media?.kanalizacja)} · gaz {mediaIcon(d.media?.gaz)}</dd>
+        <dt>Dodano / akt.</dt><dd class="muted">{d.date_added ?? '—'} / {d.date_updated ?? '—'}</dd>
+      </dl>
+    </div>
+
+    {parcel && (parcel.voivodeship || parcel.id) && (
+      <div class="panel">
+        <div class="row" style="margin-bottom:6px; align-items:center; gap:6px; flex-wrap:wrap;">
+          <strong>📍 Dane ewidencyjne</strong>
+          {parcel.confirmed === true && parcel.geoportal_url && (
+            <a class="btn ghost" href={parcel.geoportal_url} target="_blank" rel="noopener">Geoportal →</a>
+          )}
+          {(parcel.gmaps_url || (d.lat && d.lon)) && (
+            <a class="btn ghost" href={parcel.gmaps_url || `https://www.google.com/maps?q=${d.lat},${d.lon}`} target="_blank" rel="noopener">Google Maps →</a>
+          )}
+        </div>
+        <dl class="kv">
+          <dt>Nr działki</dt>
+          {parcel.confirmed === true
+            ? <dd>
+                {Array.isArray(parcel.parcels) && parcel.parcels.length
+                  ? parcel.parcels.map((pp, i) => <>{i > 0 && ', '}{pp.geoportal_url ? <a href={pp.geoportal_url} target="_blank" rel="noopener">{pp.parcel_no}</a> : pp.parcel_no}</>)
+                  : (parcel.parcel_no ?? parcel.id)}
+                {' '}<span class="muted" style="font-size:11px;">({parcel.parcel_source ?? 'potwierdzona'})</span>
+              </dd>
+            : <dd class="muted">niepotwierdzony</dd>}
+          <dt>Obręb</dt><dd>{parcel.region ?? '—'}</dd>
+          <dt>Gmina</dt><dd>{parcel.commune ?? '—'}</dd>
+          <dt>Powiat</dt><dd>{parcel.county ?? '—'}</dd>
+          <dt>Województwo</dt><dd>{parcel.voivodeship ?? '—'}</dd>
+        </dl>
+        {parcel.confirmed !== true && (
+          <p class="muted" style="font-size:12px; margin:6px 0 0;">⚠ Współrzędne z ogłoszenia są orientacyjne — numer działki niepotwierdzony. Wskaż punkt na mapie w geoportalu lub podaj nr z ogłoszenia.</p>
+        )}
+      </div>
+    )}
+
+    {(point || mapPhoto) && (
+      <div class="panel">
+        <div class="plan-wrap">
+          {point && (
+            <div class="map-wrap" style="position:relative;">
+              <button class="map-fs" data-map-fs type="button">⛶ pełny ekran</button>
+              <div id="map" style="height:320px;"></div>
+            </div>
+          )}
+          {mapPhoto && (
+            <div>
+              <p class="plan-cap">🗺️ Mapka / plan z ogłoszenia</p>
+              <img class="plan-img" src={mapPhoto} data-idx={mapIdx} loading="lazy" alt="mapka z ogłoszenia" />
+            </div>
+          )}
+        </div>
+      </div>
+    )}
+
+    <div class="panel">
+      <div class="row" style="margin-bottom:6px;">
+        <strong>📝 Notatki</strong>
+        <button class="btn ghost" id="note-add-btn" type="button">+ Dodaj notatkę</button>
+      </div>
+      <div id="notes-list">
+        {notes.length === 0 && <p class="muted" id="notes-empty">Brak notatek.</p>}
+        {notes.map((n: any) => (
+          <div class="note" data-nid={n.id}>
+            <div class="note-h">
+              <span class="muted">{n.ts}</span>
+              <span>
+                <button class="lnk" data-edit type="button">edytuj</button>
+                <button class="lnk del" data-del type="button">usuń</button>
+              </span>
+            </div>
+            <div class="note-text">{n.text}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div class="panel notes" set:html={bodyHtml}></div>
+  </main>
+
+  <div id="tags-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3>Tagi oferty</h3>
+      <span class="fld-cap">Zaznacz istniejące lub dopisz nowy tag:</span>
+      <div class="tag-choices" id="tags-choices"></div>
+      <div class="tag-row">
+        <input id="tag-new" type="text" placeholder="nowy tag…" />
+        <button class="btn ghost" id="tag-add-new" type="button">+ Dodaj</button>
+      </div>
+      <div class="row" style="justify-content:flex-end; gap:8px;">
+        <button class="btn ghost" id="tags-cancel" type="button">Anuluj</button>
+        <button class="btn" id="tags-save" type="button">Zapisz</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="note-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3 id="note-modal-title">Nowa notatka</h3>
+      <textarea id="note-text" rows="5" placeholder="Treść notatki…"></textarea>
+      <div class="row" style="justify-content:flex-end; gap:8px;">
+        <button class="btn ghost" id="note-cancel" type="button">Anuluj</button>
+        <button class="btn" id="note-save" type="button">Zapisz</button>
+      </div>
+    </div>
+  </div>
+
+  {photos.length > 0 && (
+    <div id="lb" class="lb" hidden>
+      <button class="lb-btn lb-close" type="button" aria-label="Zamknij">✕</button>
+      <button class="lb-btn lb-prev" type="button" aria-label="Poprzednie">‹</button>
+      <img id="lb-img" src="" alt="" />
+      <button class="lb-btn lb-next" type="button" aria-label="Następne">›</button>
+      <div class="lb-count"></div>
+    </div>
+  )}
+
+  <Fragment slot="scripts">
+    <script define:vars={{ id: d.id, hasDD: !!ddDate, curTags: tags, allTags }}>
+      // oznacz jako obejrzaną (raz, przy otwarciu karty)
+      fetch('/api/seen', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }) }).catch(() => {});
+      document.querySelectorAll('.statusbar .sbtn').forEach((b) =>
+        b.addEventListener('click', () =>
+          window.setStatus(id, b.dataset.st, { deepdiveIfNone: b.dataset.st === 'favorite' && !hasDD })));
+      document.getElementById('dd-run')?.addEventListener('click', () =>
+        window.runJob('/api/deepdive', { id }, 'Pogłębiona analiza'));
+
+      // --- tagi: edycja (popup z zaznaczaniem istniejących + dopisywaniem nowych) ---
+      const tagsModal = document.getElementById('tags-modal');
+      const tagChoices = document.getElementById('tags-choices');
+      const tagNew = document.getElementById('tag-new');
+      const makeChoice = (name, on) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'tag-choice' + (on ? ' on' : '');
+        b.dataset.tag = name; b.textContent = name;
+        return b;
+      };
+      const openTagsModal = () => {
+        tagChoices.innerHTML = '';
+        const seen = new Set();
+        const cur = new Set(curTags.map((t) => t.toLowerCase()));
+        const add = (name, on) => {
+          const k = name.toLowerCase();
+          if (seen.has(k)) return; seen.add(k);
+          tagChoices.appendChild(makeChoice(name, on));
+        };
+        curTags.forEach((t) => add(t, true));                    // najpierw bieżące (zaznaczone)
+        allTags.forEach((t) => add(t, cur.has(t.toLowerCase())));// potem reszta znanych
+        tagNew.value = '';
+        tagsModal.hidden = false; tagNew.focus();
+      };
+      const closeTagsModal = () => { tagsModal.hidden = true; };
+      const addNewTag = () => {
+        const v = (tagNew.value || '').replace(/,/g, ' ').trim().replace(/\s+/g, ' ');
+        if (!v) return;
+        const hit = [...tagChoices.children].find((b) => b.dataset.tag.toLowerCase() === v.toLowerCase());
+        if (hit) hit.classList.add('on');
+        else tagChoices.appendChild(makeChoice(v, true));
+        tagNew.value = ''; tagNew.focus();
+      };
+      tagChoices?.addEventListener('click', (e) => {
+        const b = e.target.closest('.tag-choice'); if (!b) return;
+        b.classList.toggle('on');
+      });
+      document.getElementById('tags-edit-btn')?.addEventListener('click', openTagsModal);
+      document.getElementById('tag-add-new')?.addEventListener('click', addNewTag);
+      tagNew?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addNewTag(); } });
+      document.getElementById('tags-cancel')?.addEventListener('click', closeTagsModal);
+      tagsModal?.addEventListener('click', (e) => { if (e.target === tagsModal) closeTagsModal(); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !tagsModal.hidden) closeTagsModal(); });
+      document.getElementById('tags-save')?.addEventListener('click', async () => {
+        const sel = [...tagChoices.querySelectorAll('.tag-choice.on')].map((b) => b.dataset.tag);
+        window.assistantToast('Zapisywanie tagów…', { spin: true });
+        let j; try {
+          j = await (await fetch('/api/tags', { method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ id, tags: sel }) })).json();
+        } catch (e) { return window.assistantToast('Błąd sieci', { err: true, hide: 6000 }); }
+        if (!j.ok) return window.assistantToast('Błąd: ' + (j.error || ''), { err: true, hide: 6000 });
+        window.assistantToast('Zapisano ✓', { hide: 1200 });
+        setTimeout(() => location.reload(), 350);
+      });
+
+      // --- notatki: dodaj / edytuj / usuń (modal) ---
+      const modal = document.getElementById('note-modal');
+      const ta = document.getElementById('note-text');
+      const title = document.getElementById('note-modal-title');
+      let editingId = null;
+      const openModal = (mode, nid, text) => {
+        editingId = mode === 'edit' ? nid : null;
+        title.textContent = mode === 'edit' ? 'Edytuj notatkę' : 'Nowa notatka';
+        ta.value = text || '';
+        modal.hidden = false; ta.focus();
+      };
+      const closeModal = () => { modal.hidden = true; };
+      document.getElementById('note-add-btn')?.addEventListener('click', () => openModal('add'));
+      document.getElementById('note-cancel')?.addEventListener('click', closeModal);
+      modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) closeModal(); });
+
+      // aktualizacja DOM w miejscu (bez reloadu — natychmiast i bez problemu z opóźnioną synchr. content-layer)
+      const list = document.getElementById('notes-list');
+      const makeNote = (n) => {
+        const div = document.createElement('div');
+        div.className = 'note'; div.dataset.nid = n.id;
+        const h = document.createElement('div'); h.className = 'note-h';
+        const ts = document.createElement('span'); ts.className = 'muted'; ts.textContent = n.ts;
+        const act = document.createElement('span');
+        act.innerHTML = '<button class="lnk" data-edit type="button">edytuj</button>' +
+          '<button class="lnk del" data-del type="button">usuń</button>';
+        h.append(ts, act);
+        const txt = document.createElement('div'); txt.className = 'note-text'; txt.textContent = n.text;
+        div.append(h, txt);
+        return div;
+      };
+      const post = (body) => fetch('/api/note', { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id, ...body }) }).then((r) => r.json());
+      // zmiana notatki → ponowna ocena w tle (uwzględnia treść notatek), po zakończeniu odświeżenie
+      const triggerReeval = () => window.runJob('/api/reeval', { id, reason: 'zmiana notatki' }, 'Ponowna ocena (notatka)');
+
+      document.getElementById('note-save')?.addEventListener('click', async () => {
+        const text = ta.value.trim();
+        if (!text) { window.assistantToast('Pusta notatka', { err: true, hide: 3000 }); return; }
+        window.assistantToast('Zapisywanie…', { spin: true });
+        if (editingId) {
+          const j = await post({ action: 'edit', noteId: editingId, text });
+          if (!j.ok) return window.assistantToast('Błąd: ' + (j.error || ''), { err: true, hide: 6000 });
+          const wrap = list.querySelector(`.note[data-nid="${editingId}"]`);
+          if (wrap) { wrap.querySelector('.note-text').textContent = text;
+            wrap.querySelector('.muted').textContent += ' (edyt.)'; }
+        } else {
+          const j = await post({ action: 'add', text });
+          if (!j.ok || !j.note) return window.assistantToast('Błąd: ' + (j.error || ''), { err: true, hide: 6000 });
+          document.getElementById('notes-empty')?.remove();
+          list.appendChild(makeNote(j.note));
+        }
+        closeModal();
+        window.assistantToast('Zapisano ✓', { hide: 1500 });
+        triggerReeval();
+      });
+
+      list?.addEventListener('click', async (e) => {
+        const wrap = e.target.closest('.note'); if (!wrap) return;
+        const nid = wrap.dataset.nid;
+        if (e.target.matches('[data-edit]')) {
+          openModal('edit', nid, wrap.querySelector('.note-text')?.textContent || '');
+        } else if (e.target.matches('[data-del]')) {
+          if (!confirm('Usunąć tę notatkę?')) return;
+          window.assistantToast('Usuwanie…', { spin: true });
+          const j = await post({ action: 'delete', noteId: nid });
+          if (!j.ok) return window.assistantToast('Błąd: ' + (j.error || ''), { err: true, hide: 6000 });
+          wrap.remove();
+          if (!list.querySelector('.note')) {
+            const p = document.createElement('p'); p.className = 'muted'; p.id = 'notes-empty';
+            p.textContent = 'Brak notatek.'; list.appendChild(p);
+          }
+          window.assistantToast('Usunięto ✓', { hide: 1500 });
+          triggerReeval();
+        }
+      });
+    </script>
+    {point && (
+      <script define:vars={{ point }}>
+        const map = L.map('map').setView([point.lat, point.lon], 14);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+        L.circleMarker([point.lat, point.lon], {
+          radius: 10, color: '#0f1115', weight: 2, fillColor: '#4f9cf9', fillOpacity: point.approx ? 0.55 : 0.95,
+        }).addTo(map);
+        const wrap = document.querySelector('.map-wrap');
+        const fsBtn = document.querySelector('[data-map-fs]');
+        function toggleMapFs(on) {
+          wrap.classList.toggle('fs', on);
+          if (fsBtn) fsBtn.textContent = wrap.classList.contains('fs') ? '✕ zamknij' : '⛶ pełny ekran';
+          setTimeout(() => map.invalidateSize(), 120);
+        }
+        fsBtn?.addEventListener('click', () => toggleMapFs(!wrap.classList.contains('fs')));
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && wrap.classList.contains('fs')) toggleMapFs(false); });
+      </script>
+    )}
+    {photos.length > 0 && (
+      <script define:vars={{ photos }}>
+        const lb = document.getElementById('lb');
+        const img = document.getElementById('lb-img');
+        const counter = lb.querySelector('.lb-count');
+        let i = 0;
+        const show = (n) => { i = (n + photos.length) % photos.length; img.src = photos[i];
+          counter.textContent = `${i + 1} / ${photos.length}`; };
+        const open = (n) => { show(n); lb.hidden = false; };
+        const close = () => { lb.hidden = true; img.src = ''; };
+        document.querySelectorAll('.gallery img, .plan-img').forEach((el) => {
+          if (+el.dataset.idx >= 0) el.addEventListener('click', () => open(+el.dataset.idx));
+        });
+        lb.querySelector('.lb-next').addEventListener('click', (e) => { e.stopPropagation(); show(i + 1); });
+        lb.querySelector('.lb-prev').addEventListener('click', (e) => { e.stopPropagation(); show(i - 1); });
+        lb.querySelector('.lb-close').addEventListener('click', close);
+        lb.addEventListener('click', (e) => { if (e.target === lb) close(); });
+        document.addEventListener('keydown', (e) => {
+          if (lb.hidden) return;
+          if (e.key === 'Escape') close();
+          else if (e.key === 'ArrowRight') show(i + 1);
+          else if (e.key === 'ArrowLeft') show(i - 1);
+        });
+      </script>
+    )}
+  </Fragment>
+</Base>

@@ -1,0 +1,36 @@
+# --- sekrety / lokalna konfiguracja (NIGDY do repo) ---
+site/.env
+**/.env
+.claude/settings.local.json
+
+# --- dane prywatne użytkownika (baza ofert, zdjęcia, konfiguracja) ---
+knowledge/
+properties/listings/*
+!properties/listings/.gitkeep
+properties/photos/*
+!properties/photos/.gitkeep
+properties/facebook_groups.json
+kryteria-poszukiwania.pdf
+dd_section_*.md
+
+# --- zależności i build ---
+node_modules/
+site/node_modules/
+site/dist/
+site/.astro/
+
+# --- cache / tymczasowe ---
+**/__pycache__/
+*.pyc
+scripts/.cache/
+
+# --- sesja Facebook (zalogowany profil Playwright — NIGDY do repo) ---
+scripts/.fb_profile/
+scripts/fb_cookies*.json
+
+# --- junction do properties/photos (duplikat danych) ---
+site/public/photos
+
+# --- system ---
+Thumbs.db
+.DS_Store

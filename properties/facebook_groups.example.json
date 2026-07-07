@@ -1,0 +1,14 @@
+{
+  "groups": [
+    {
+      "id": "123456789012345",
+      "url": "https://www.facebook.com/groups/123456789012345",
+      "name": "Przykładowa grupa: Działki na sprzedaż (region X)",
+      "enabled": true,
+      "added": "2026-01-01 12:00",
+      "last_scanned": null,
+      "last_post_ts": null,
+      "seen_post_ids": []
+    }
+  ]
+}
