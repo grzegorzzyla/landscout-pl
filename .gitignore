@@ -34,3 +34,4 @@ site/public/photos
 # --- system ---
 Thumbs.db
 .DS_Store
+promo-posty.md
