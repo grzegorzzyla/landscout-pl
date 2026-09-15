@@ -137,9 +137,32 @@ export function startClaudeJob(kind: Job['kind'], label: string, prompt: string,
   return id;
 }
 
+// Interpreter Pythona nie jest ten sam na każdej maszynie: na macOS/Linux `python` bywa innym
+// (systemowym) Pythonem niż ten, do którego pip zainstalował zależności — wtedy skrypty wywracają się
+// na `ModuleNotFoundError: No module named 'yaml'`. Na Windowsie zwykle jest odwrotnie i `python3`
+// nie istnieje. Dlatego wybieramy interpreter, który REALNIE importuje yaml, i cache'ujemy wynik.
+let _pythonExe: string | null = null;
+export function pythonExe(): string {
+  if (_pythonExe) return _pythonExe;
+  const candidates = [process.env.PYTHON_EXE, 'python3', 'python'].filter(Boolean) as string[];
+  for (const exe of candidates) {
+    try {
+      execFileSync(exe, ['-c', 'import yaml, httpx'], { stdio: 'ignore' });
+      _pythonExe = exe;
+      return exe;
+    } catch {
+      /* próbuj kolejny */
+    }
+  }
+  throw new Error(
+    'Nie znaleziono Pythona z zależnościami (yaml, httpx). Zainstaluj: ' +
+    'pip install -r scripts/requirements.txt — albo wskaż interpreter zmienną PYTHON_EXE.',
+  );
+}
+
 // Deterministyczne wywołanie manage_listing.py (status/notatki) — synchronicznie, zwraca sparsowany JSON.
 export function runManage(args: string[]): any {
-  const out = execFileSync('python', ['scripts/manage_listing.py', ...args], {
+  const out = execFileSync(pythonExe(), ['scripts/manage_listing.py', ...args], {
     cwd: PROJECT_DIR,
     encoding: 'utf-8',
     env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
