@@ -13,6 +13,20 @@ entries.sort((a, b) => {
   return (b.data.score ?? -1) - (a.data.score ?? -1);
 });
 
+// Lista źródeł do filtra budowana Z DANYCH, nie wpisana na sztywno — inaczej rozjeżdża się przy
+// każdym nowym scraperze (tak wypadły z filtra Morizon, adresowo i KOWR, mimo ofert w bazie).
+const SOURCE_LABELS = { olx: 'OLX', otodom: 'Otodom', morizon: 'Morizon', adresowo: 'adresowo',
+                        kowr: 'KOWR (przetargi)', gethome: 'gethome', facebook: 'Facebook',
+                        geoportal: 'geoportal' };
+const sourceCounts = new Map();
+for (const e of entries) {
+  const key = e.data.source_type === 'geoportal' ? 'geoportal' : (e.data.source ?? null);
+  if (key) sourceCounts.set(key, (sourceCounts.get(key) ?? 0) + 1);
+}
+const sourceOptions = [...sourceCounts.entries()]
+  .sort((a, b) => b[1] - a[1])
+  .map(([key, n]) => ({ key, label: (SOURCE_LABELS[key] ?? key) + ` (${n})` }));
+
 const thumb = (d) =>
   d.cover ? '/' + d.cover : (d.photos?.length ? '/' + d.photos[0] : (d.images?.length ? d.images[0] : ''));
 
@@ -72,10 +86,7 @@ const allTags = [...new Set(entries.flatMap((e) => e.data.tags ?? []))].sort((a,
       <label>Źródło
         <select id="f-source">
           <option value="">wszystkie</option>
-          <option value="olx">OLX</option>
-          <option value="otodom">Otodom</option>
-          <option value="gethome">gethome</option>
-          <option value="geoportal">geoportal</option>
+          {sourceOptions.map((o) => <option value={o.key}>{o.label}</option>)}
         </select>
       </label>
       <label>Cena maks. (zł)<input id="f-price" type="number" placeholder="bez limitu" /></label>
@@ -110,7 +121,7 @@ const allTags = [...new Set(entries.flatMap((e) => e.data.tags ?? []))].sort((a,
   <div id="addlink-modal" class="modal" hidden>
     <div class="modal-box">
       <h3>Dodaj ofertę z linku</h3>
-      <input id="add-url" type="url" placeholder="link OLX / Otodom / gethome" />
+      <input id="add-url" type="url" placeholder="link OLX / Otodom / Morizon / adresowo / gethome" />
       <div class="row" style="justify-content:flex-end; gap:8px;">
         <button class="btn ghost" id="addlink-cancel" type="button">Anuluj</button>
         <button class="btn" id="addlink-ok" type="button">Zatwierdź</button>
@@ -134,7 +145,7 @@ const allTags = [...new Set(entries.flatMap((e) => e.data.tags ?? []))].sort((a,
             class={`card${d.seen ? '' : ' unseen'}`}
             data-id={d.id}
             data-status={d.status}
-            data-source={d.source ?? ''}
+            data-source={d.source_type === 'geoportal' ? 'geoportal' : (d.source ?? '')}
             data-price={d.price ?? ''}
             data-area={d.area_m2 ?? ''}
             data-dd={d.deep_dive?.date ? '1' : ''}
