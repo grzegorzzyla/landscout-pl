@@ -2,7 +2,7 @@
 
 **Agentowy system wyszukiwania działek** — opisujesz wymarzoną działkę zwykłym tekstem, a system
 przeszukuje polskie portale ogłoszeniowe, ocenia każdą ofertę względem Twojego opisu (LLM, score 0–100
-z uzasadnieniem), analizuje teren w danych geodezyjnych (geoportal, model terenu) i serwuje ranking
+z uzasadnieniem), analizuje teren w danych geodezyjnych (geoportal, model terenu, uciążliwości) i serwuje ranking
 na stronie, którą obsłużysz z telefonu.
 
 Zbudowany na **Claude Code** (skille + agenci) z rdzeniem niezawodności w postaci przetestowanych
@@ -14,7 +14,7 @@ stoku, z widokiem, w leśnej otulinie — bez codziennego przeklikiwania setek o
 ## Jak to działa
 
 ```
-portale (OLX / Otodom / Morizon / gethome) + grupy Facebook
+portale (OLX / Otodom / Morizon / gethome) + KOWR (przetargi) + grupy Facebook
         │  listing — twarde filtry portalu (lokalizacja, powierzchnia, cena)
         ▼
    pre-screen — tani odsiew na danych z listy (geo/area/price/kategoria)
@@ -26,7 +26,8 @@ portale (OLX / Otodom / Morizon / gethome) + grupy Facebook
     ranking — strona www: statusy, tagi, notatki, mapa, galeria
         ▼
   deep-dive — geoportal (nr działki), wysokość/nachylenie/ekspozycja stoku (NMT),
-              odległości do kolei/sklepu/szpitala/wody (OSM), linki do MPZP/KW
+              odległości do kolei/sklepu/szpitala/wody + uciążliwości (OSM),
+              linki do MPZP/KW
 ```
 
 Kluczowa idea: **twarde parametry filtrują, ale decyduje opis jakościowy**. W `properties/criteria.md`
@@ -36,18 +37,30 @@ Ocena LLM czyta pełny opis każdego ogłoszenia i punktuje właśnie względem 
 
 ## Co potrafi
 
-- **4 portale + Facebook**: OLX (JSON API), Otodom (`__NEXT_DATA__` + fallback Playwright), Morizon,
-  gethome oraz skaner zarejestrowanych grup FB (Playwright, trwały profil).
+- **4 portale + KOWR + Facebook**: OLX (JSON API), Otodom (`__NEXT_DATA__` + fallback Playwright),
+  Morizon, gethome oraz skaner zarejestrowanych grup FB (Playwright, trwały profil).
+- **KOWR — państwowa ziemia rolna z przetargów**, której nie ma na portalach ogłoszeniowych. Inny model
+  danych niż ogłoszenie: cena jest **wywoławcza**, część zasobu to dzierżawa, a tytuł oferty zawiera
+  obręb i **numer działki** — dzięki czemu analiza terenowa potwierdza działkę w ewidencji, zamiast
+  opierać się na orientacyjnym punkcie z portalu.
 - **Ocena 0–100 z uzasadnieniem** dla każdej oferty + werdykt (dopasowane / do weryfikacji / odrzucone),
   który decyduje o statusie nowej oferty. Notatki użytkownika („byłem, teren płaski") ważą więcej niż
   opis sprzedającego.
 - **Deep-dive terenowy** bez wychodzenia z domu: rozwiązanie numeru działki w ULDK GUGiK (z geometrią),
   wysokość n.p.m. / nachylenie / ekspozycja stoku z NMT, odległości do najbliższej stacji kolejowej,
   sklepu, szpitala i wody z OSM, deep-linki do MPZP/RCiWN/KW.
+- **Weryfikacja uciążliwości** — to, o czym ogłoszenie milczy z oczywistych powodów: czynna linia
+  kolejowa, droga krajowa/ekspresowa (także w budowie), cmentarz, ferma, przemysł, wyrobisko,
+  składowisko, oczyszczalnia, wiatraki, linie NN. Odległość do obiektów liniowych liczona do
+  **geometrii**, nie do centroidu — tor przechodzący 200 m obok nie może raportować się jako odległy
+  o kilkanaście kilometrów. Etap regularnie wywraca czołówkę rankingu zbudowaną na samych opisach.
 - **Strona z rankingiem** (SSR, dane czytane z dysku na każde żądanie): statusy
   (aktywne/obserwowane/ulubione/nieaktualne), tagi, notatki, sortowanie, galeria-lightbox, mapa
   pełnoekranowa, dodawanie oferty z wklejonego linku. Działa wygodnie na telefonie (np. przez Tailscale).
-- **Idempotentny ingest i dedup** po (portal, id ogłoszenia) — oferta raz skasowana nie wraca.
+- **Idempotentny ingest i dedup** po (portal, id ogłoszenia) — oferta raz skasowana nie wraca. Osobno
+  wykrywane są **bliźniaki międzyportalowe** (ta sama oferta na OLX i Otodom ma inny id i inny URL):
+  para (powierzchnia, cena) + potwierdzenie geograficzne; zachowany rekord przejmuje dokładniejsze
+  współrzędne od scalonego.
 - **Jedno źródło prawdy**: 1 plik Markdown na ofertę (frontmatter YAML + historia ocen). Zero bazy danych,
   wszystko diffowalne i czytelne.
 
