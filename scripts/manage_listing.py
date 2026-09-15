@@ -497,15 +497,63 @@ def _richness(fm: dict, listing_id: str) -> tuple:
     Priorytet: status (ulubione/obserwowane najwyżej) → ma ocenę → liczba zdjęć → notatki → deep-dive;
     remis rozstrzyga niższe ID (starsza/kanoniczna oferta)."""
     num = int(listing_id.split("_")[1]) if "_" in listing_id else 0
+    # Dokładne współrzędne ważą WYŻEJ niż liczba zdjęć: bliźniak z `coords_approx: true` potrafi mieć
+    # pinezkę w zupełnie innym województwie (Morizon bywa tak wystawiony), a od pozycji zależą mapa,
+    # dystanse i cała analiza terenowa. Lepszy rekord z 7 zdjęciami i dobrą pozycją niż z 20 i złą.
+    exact_coords = 1 if (fm.get("lat") is not None and fm.get("lon") is not None
+                         and not fm.get("coords_approx")) else 0
     return (
         _STATUS_RANK.get(fm.get("status"), 0),
         1 if fm.get("score") is not None else 0,
+        exact_coords,
         len(fm.get("photos") or []),
         1 if fm.get("notes") else 0,
         1 if fm.get("deep_dive") else 0,
         1 if (fm.get("parcel") or {}).get("confirmed") else 0,
         -num,  # remis → mniejszy numer (starsza oferta) wygrywa
     )
+
+
+def _norm_txt(s: Any) -> str:
+    """Bez ogonków, małymi literami — do porównywania nazw miejscowości."""
+    import unicodedata
+    if not s:
+        return ""
+    s = unicodedata.normalize("NFKD", str(s))
+    return "".join(c for c in s if not unicodedata.combining(c)).lower()
+
+
+def _same_place(a: dict, b: dict) -> bool:
+    """Czy dwa rekordy opisują to samo miejsce? Potrzebne przy bliźniakach MIĘDZYPORTALOWYCH:
+    ta sama oferta na OLX i Otodom ma inny source_id i inny URL, więc klucze (source,source_id)
+    i URL jej nie łapią. Sama para (powierzchnia, cena) to za mało — działki 3000 m² po 150 tys.
+    trafiają się w różnych końcach kraju — więc wymagamy POTWIERDZENIA GEOGRAFICZNEGO:
+      - ta sama miejscowość, albo
+      - współrzędne bliżej niż 25 km, albo
+      - miejscowość jednego występuje w tytule/opisie drugiego (portale różnie nazywają tę samą wieś,
+        np. 'Pilchowice' w tytule oferty opisanej jako 'Klecza').
+    """
+    ca = _norm_txt((a.get("location") or {}).get("city"))
+    cb = _norm_txt((b.get("location") or {}).get("city"))
+    if ca and cb and ca == cb:
+        return True
+    la, na = a.get("lat"), a.get("lon")
+    lb, nb = b.get("lat"), b.get("lon")
+    if None not in (la, na, lb, nb):
+        import math
+        R = 6371.0
+        p1, p2 = math.radians(la), math.radians(lb)
+        dp, dl = math.radians(lb - la), math.radians(nb - na)
+        h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+        if 2 * R * math.asin(math.sqrt(h)) < 25:
+            return True
+    hay_a = _norm_txt(f"{a.get('title')} {a.get('description')}")
+    hay_b = _norm_txt(f"{b.get('title')} {b.get('description')}")
+    if ca and len(ca) > 3 and ca in hay_b:
+        return True
+    if cb and len(cb) > 3 and cb in hay_a:
+        return True
+    return False
 
 
 def find_duplicate_groups() -> tuple[list[list[str]], dict]:
@@ -537,9 +585,25 @@ def find_duplicate_groups() -> tuple[list[list[str]], dict]:
         u = _norm_url(fm.get("url"))
         if u:
             by_url.setdefault(u, []).append(i)
+    # trzeci klucz: bliźniak MIĘDZYPORTALOWY — ta sama oferta wystawiona na kilku portalach
+    # (inny source_id, inny URL). Para (powierzchnia, cena) + potwierdzenie geograficzne.
+    by_ap: dict[tuple, list[str]] = {}
+    for i in ids:
+        fm = meta[i]
+        a, pr = fm.get("area_m2"), fm.get("price")
+        if a and pr:
+            by_ap.setdefault((int(a), int(pr)), []).append(i)
+
     for grp in list(by_sid.values()) + list(by_url.values()):
         for j in grp[1:]:
             union(grp[0], j)
+    for grp in by_ap.values():
+        if len(grp) < 2:
+            continue
+        for x in range(len(grp)):
+            for y in range(x + 1, len(grp)):
+                if _same_place(meta[grp[x]], meta[grp[y]]):
+                    union(grp[x], grp[y])
     comps: dict[str, list[str]] = {}
     for i in ids:
         comps.setdefault(find(i), []).append(i)
@@ -557,7 +621,29 @@ def dedupe(apply: bool = False) -> list[dict]:
         plan.append({"keep": keeper, "delete": losers,
                      "source": meta[keeper].get("source"),
                      "url": _norm_url(meta[keeper].get("url"))})
+        # SCAL, nie tylko wybierz: zwycięzcę wskazuje status/ocena (decyzja użytkownika i pipeline'u),
+        # ale bliźniak z innego portalu bywa lepszy w jednym konkretnym polu — WSPÓŁRZĘDNYCH.
+        # Jeśli keeper ma pozycję orientacyjną, a przegrany dokładną, przenosimy ją na keepera:
+        # od pozycji zależą mapa, dystanse do torów/dróg i cała analiza terenowa.
+        fixed_coords = None
+        kfm = meta[keeper]
+        if kfm.get("coords_approx") or kfm.get("lat") is None:
+            for i in losers:
+                lfm = meta[i]
+                if lfm.get("lat") is not None and not lfm.get("coords_approx"):
+                    fixed_coords = (lfm["lat"], lfm["lon"], i)
+                    break
+        if fixed_coords:
+            plan[-1]["coords_from"] = fixed_coords[2]
         if apply:
+            if fixed_coords:
+                lat, lon, src = fixed_coords
+                fm, body = load_listing(keeper)
+                fm["lat"], fm["lon"], fm["coords_approx"] = lat, lon, False
+                fm["date_updated"] = _now_ts()
+                save_listing(keeper, fm, body)
+                log_history(keeper, f"dedup: przejęto dokładne współrzędne z {src} "
+                                    f"(poprzednie były orientacyjne)")
             for i in losers:
                 delete_listing(i)
             log_history(keeper, f"dedup: scalono duplikaty {', '.join(losers)} (skasowane)")

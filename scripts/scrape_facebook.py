@@ -81,16 +81,34 @@ def _now_ts() -> str:
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
+# Facebook agresywnie wykrywa automatyzację i odpowiada NIEKOŃCZĄCĄ SIĘ captchą. Trzy rzeczy, które
+# o tym decydują (wszystkie obsłużone niżej):
+#  1. Chromium z Playwrighta ma inny odcisk niż zwykły Chrome → używamy PRAWDZIWEGO Chrome (channel),
+#     a na Chromium schodzimy dopiero, gdy Chrome'a nie ma w systemie;
+#  2. podmiana user-agenta na sztywną wartość rozjeżdżała się z realnym systemem (UA "Windows, Chrome 124"
+#     na macOS z Chrome 152 to jawny sygnał bota) → przy prawdziwym Chrome NIE nadpisujemy UA;
+#  3. flaga AutomationControlled i `navigator.webdriver` → wyłączone / usunięte.
 def _open_context(pw, headless: bool):
     """Trwały kontekst Playwright z profilem FB (zapamiętane logowanie)."""
     os.makedirs(PROFILE_DIR, exist_ok=True)
-    return pw.chromium.launch_persistent_context(
-        PROFILE_DIR,
+    opts = dict(
         headless=headless,
-        user_agent=common.UA,
         locale="pl-PL",
         viewport={"width": 1366, "height": 900},
+        args=["--disable-blink-features=AutomationControlled"],
     )
+    ctx = None
+    try:
+        ctx = pw.chromium.launch_persistent_context(PROFILE_DIR, channel="chrome", **opts)
+    except Exception:
+        # brak zainstalowanego Chrome — fallback na Chromium (wtedy UA musi być spójny z platformą)
+        ctx = pw.chromium.launch_persistent_context(PROFILE_DIR, user_agent=common.UA, **opts)
+    try:
+        ctx.add_init_script(
+            "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});")
+    except Exception:  # noqa: BLE001
+        pass
+    return ctx
 
 
 def _logged_in(context) -> bool:
@@ -257,13 +275,21 @@ def scan_group(group_id: str, max_posts: int = 40, headed: bool = False) -> dict
             context.close()
 
     listings = list(collected.values())[:max_posts]
+    # Facebook DŁAWI zautomatyzowane przeglądarki: nawet przy poprawnej sesji i członkostwie w grupie
+    # renderuje ~1-3 posty i nie doładowuje kolejnych (feed jest wirtualizowany, `scrollY` dobija do
+    # końca strony po jednym ekranie). Trzeba to odróżnić od "grupa nie ma nowych postów", bo inaczej
+    # pusty wynik wygląda na sukces. mbasic.facebook.com (kiedyś czysty HTML) został wycofany.
+    throttled = len(scanned_ids) <= 3
     meta = {
         "source": "facebook",
         "group_id": str(group_id),
         "name": name,
         "in": len(scanned_ids),
         "returned": len(listings),
+        "throttled": throttled,
         "scanned_ids": scanned_ids,
+        "note": ("FB dławi zautomatyzowaną przeglądarkę — zobaczono tylko %d postów; to NIE znaczy, "
+                 "że grupa nie ma nowych treści" % len(scanned_ids)) if throttled else None,
         "new_watermark": _now_ts(),
     }
     if error:

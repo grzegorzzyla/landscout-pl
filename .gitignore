@@ -25,7 +25,8 @@ site/.astro/
 scripts/.cache/
 
 # --- sesja Facebook (zalogowany profil Playwright — NIGDY do repo) ---
-scripts/.fb_profile/
+# (wzorzec z gwiazdką łapie też odłożone kopie profilu — mają ciasteczka sesji)
+scripts/.fb_profile*/
 scripts/fb_cookies*.json
 
 # --- junction do properties/photos (duplikat danych) ---

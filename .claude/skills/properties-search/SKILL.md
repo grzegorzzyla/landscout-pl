@@ -66,9 +66,10 @@ Przeczytaj `properties/criteria.md`. Z frontmattera weź: `transaction`, `locati
 `distance_km`), `area_min/max`, `price_min/max`, `score_threshold`, `include_homes` (bool). Z treści weź
 **opis poszukiwanej działki** (do oceny). Argumenty wywołania nadpisują kryteria (np. `--location`, `--max`).
 
-**Portale do przeszukania** bierz z argumentu `--portals` (lista po przecinku). Domyślnie: **`olx,otodom,morizon`**
+**Portale do przeszukania** bierz z argumentu `--portals` (lista po przecinku). Domyślnie: **`olx,otodom,morizon,kowr`**
 (gethome dorzuć jako backup, gdy łącznie mało wyników). Skrypt na portal: `scrape_olx.py`, `scrape_otodom.py`,
-`scrape_morizon.py`, `scrape_gethome.py` — wszystkie dają ten sam schemat rekordu i flagę `--kind dzialka|dom`.
+`scrape_morizon.py`, `scrape_kowr.py` (przetargi KOWR — państwowa ziemia rolna, ceny WYWOŁAWCZE,
+numer działki w tytule), `scrape_gethome.py` — wszystkie dają ten sam schemat rekordu i flagę `--kind dzialka|dom`.
 
 ## Krok 1: Listowanie (przetestowane skrypty)
 Dla **każdej** lokalizacji z kryteriów uruchom skrypty **wybranych portali** (`--portals`). Przykład dla

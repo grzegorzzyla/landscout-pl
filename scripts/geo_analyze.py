@@ -9,7 +9,10 @@ Zwraca na stdout JSON:
   "input": {...},
   "parcel": {id, voivodeship, county, commune, region, parcel_no, srid, centroid_2180:[x,y]} | error,
   "terrain": {elevation_m, slope_pct, aspect, samples:{...}} | error,
-  "pois": {railway, supermarket, hospital, water: {name, dist_m, lat, lon} | null},
+  "pois": {railway, supermarket, hospital, water: {name, dist_m, lat, lon} | null},   # UDOGODNIENIA (15 km)
+  "nuisances": {railway, road_major, cemetery, farm, industrial, quarry, landfill,      # UCIĄŻLIWOŚCI (2,5 km)
+                wastewater, wind, power_line: {what, name, dist_m} | null},
+                # odległość do linii (tory/drogi/linie NN) liczona do GEOMETRII, nie do centroidu
   "links": {geoportal, mapy_google, osm, mpzp_hint, rcwin_hint, ekw_hint},
   "notes": [ "..." ]            # czego NIE dało się ustalić automatycznie
 }
@@ -291,13 +294,22 @@ def _wkt_centroid_area(wkt: str) -> tuple[float | None, float | None, float | No
 
 
 # --- NMT: wysokość, nachylenie, ekspozycja --------------------------------
-def _nmt_height(x2180: float, y2180: float) -> float | None:
+def _nmt_height(northing: float, easting: float) -> float | None:
+    """Wysokość z NMT GUGiK. UWAGA na kolejność osi: w PL-1992 (EPSG:2180) X = NORTHING,
+    Y = EASTING, i tak samo rozumie je usługa GetHByXY. Tymczasem `wgs84_to_pl1992()` zwraca
+    (easting, northing) — podanie ich wprost jako x/y daje wysokość zupełnie innego miejsca
+    albo 0.0 (punkt poza zasięgiem NMT). Dlatego ta funkcja przyjmuje (northing, easting)."""
     try:
         r = common.http_get("https://services.gugik.gov.pl/nmt/",
-                            params={"request": "GetHByXY", "x": x2180, "y": y2180},
+                            params={"request": "GetHByXY", "x": northing, "y": easting},
                             accept="text/plain", retries=2)
         val = r.text.strip()
-        return float(val) if re.match(r"^-?\d+(\.\d+)?$", val) else None
+        if not re.match(r"^-?\d+(\.\d+)?$", val):
+            return None
+        h = float(val)
+        # NMT poza zasięgiem zwraca dokładne 0 — w Polsce żaden punkt lądowy nie ma dokładnie 0,0 m
+        # (minimum to ok. -1,8 m pod Elblągiem), więc traktujemy to jako brak odczytu, nie jako "poziom morza".
+        return None if h == 0.0 else h
     except Exception:
         return None
 
@@ -308,15 +320,17 @@ _ASPECTS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 def fetch_terrain(centroid_2180: list[float] | None) -> dict:
     if not centroid_2180:
         return {"error": "brak centroidu działki (NMT pominięte)"}
-    cx, cy = centroid_2180
+    easting, northing = centroid_2180      # wgs84_to_pl1992() zwraca (easting, northing)
     d = 30.0  # m
-    h_c = _nmt_height(cx, cy)
-    # próbki: E/W po osi x (easting), N/S po osi y (northing)
-    h_e = _nmt_height(cx + d, cy)
-    h_w = _nmt_height(cx - d, cy)
-    h_n = _nmt_height(cx, cy + d)
-    h_s = _nmt_height(cx, cy - d)
-    out: dict = {"elevation_m": round(h_c, 1) if h_c is not None else None,
+    h_c = _nmt_height(northing, easting)
+    # próbki: E/W przesuwają EASTING, N/S przesuwają NORTHING
+    h_e = _nmt_height(northing, easting + d)
+    h_w = _nmt_height(northing, easting - d)
+    h_n = _nmt_height(northing + d, easting)
+    h_s = _nmt_height(northing - d, easting)
+    if h_c is None:
+        return {"error": "NMT: brak odczytu wysokości dla punktu (poza zasięgiem lub usługa niedostępna)"}
+    out: dict = {"elevation_m": round(h_c, 1),
                  "samples": {"C": h_c, "E": h_e, "W": h_w, "N": h_n, "S": h_s}}
     if None in (h_e, h_w, h_n, h_s):
         out["note"] = "częściowy NMT — nachylenie/ekspozycja przybliżone lub pominięte"
@@ -360,7 +374,7 @@ def _overpass_query(lat: float, lon: float, radius: int) -> list[dict]:
     """Jedno zapytanie o wszystkie kategorie POI; retry + fallback endpoint."""
     a = f"(around:{radius},{lat},{lon})"
     q = (
-        "[out:json][timeout:30];("
+        "[out:json][timeout:90];("
         f"node[railway=station]{a};node[railway=halt]{a};"
         f"nwr[shop=supermarket]{a};"
         f"nwr[amenity=hospital]{a};"
@@ -373,7 +387,7 @@ def _overpass_query(lat: float, lon: float, radius: int) -> list[dict]:
             try:
                 r = httpx.post(url, data={"data": q},
                                headers={"User-Agent": "assistant-properties/1.0 (personal use)"},
-                               timeout=60)
+                               timeout=150)
                 return r.json().get("elements", [])
             except Exception as e:  # noqa: BLE001 (np. 429 → tekst, nie JSON)
                 last = str(e)
@@ -405,6 +419,149 @@ def fetch_pois(lat: float, lon: float, radius: int = 15000) -> dict:
     return out
 
 
+# --- Overpass: UCIĄŻLIWOŚCI (to, o czym ogłoszenie milczy) ----------------
+# Osobne zapytanie w MAŁYM promieniu — inaczej niż POI (udogodnienia, 15 km), bo tu liczy się
+# bezpośrednie sąsiedztwo. Dla linii (tory, drogi) liczymy odległość do GEOMETRII, nie do centroidu:
+# centroid 20-kilometrowej linii kolejowej potrafi leżeć kilkanaście km od działki, przez którą ta linia
+# przechodzi 200 m obok.
+_NUISANCE_LABELS = {
+    "railway":    "czynna linia kolejowa",
+    "road_major": "droga ekspresowa/krajowa (motorway/trunk/primary)",
+    "road_build": "droga w budowie",
+    "cemetery":   "cmentarz",
+    "farm":       "zabudowa zagrodowa / budynek gospodarczy (możliwa hodowla)",
+    "industrial": "teren przemysłowy / zakład",
+    "quarry":     "wyrobisko / żwirownia / kopalnia odkrywkowa",
+    "landfill":   "składowisko odpadów",
+    "wastewater": "oczyszczalnia ścieków",
+    "wind":       "turbina wiatrowa",
+    "power_line": "linia wysokiego napięcia",
+}
+
+# progi ostrzegawcze (m) — przekroczenie generuje wpis w notes
+_NUISANCE_ALERT_M = {
+    "railway": 2000, "road_major": 1000, "road_build": 1500, "cemetery": 150,
+    "farm": 500, "industrial": 1000, "quarry": 1500, "landfill": 2000,
+    "wastewater": 1000, "wind": 1000, "power_line": 200,
+}
+
+
+def _classify_nuisance(tags: dict) -> str | None:
+    rw = tags.get("railway")
+    if rw == "rail" and tags.get("service") not in ("yard", "siding", "spur"):
+        return "railway"
+    hw = tags.get("highway")
+    if hw in ("motorway", "trunk", "primary"):
+        return "road_major"
+    if hw == "construction" and tags.get("construction") in ("motorway", "trunk", "primary"):
+        return "road_build"
+    lu = tags.get("landuse")
+    if lu == "cemetery" or tags.get("amenity") == "grave_yard":
+        return "cemetery"
+    if lu == "farmyard" or tags.get("building") in ("farm_auxiliary", "barn", "cowshed"):
+        return "farm"
+    if lu == "industrial" or tags.get("man_made") == "works":
+        return "industrial"
+    if lu == "quarry":
+        return "quarry"
+    if lu == "landfill":
+        return "landfill"
+    if tags.get("man_made") == "wastewater_plant":
+        return "wastewater"
+    if tags.get("generator:source") == "wind" or tags.get("power") == "generator" and tags.get("generator:method") == "wind_turbine":
+        return "wind"
+    if tags.get("power") == "line":
+        return "power_line"
+    return None
+
+
+def _min_dist_to_element(lat: float, lon: float, el: dict) -> float | None:
+    """Najmniejsza odległość do elementu: po geometrii (way/relation) albo po punkcie."""
+    best = None
+    for pt in (el.get("geometry") or []):
+        if pt.get("lat") is None:
+            continue
+        d = haversine_m(lat, lon, pt["lat"], pt["lon"])
+        if best is None or d < best:
+            best = d
+    if best is not None:
+        return best
+    elat = el.get("lat") or (el.get("center") or {}).get("lat")
+    elon = el.get("lon") or (el.get("center") or {}).get("lon")
+    if elat is None or elon is None:
+        return None
+    return haversine_m(lat, lon, elat, elon)
+
+
+def fetch_nuisances(lat: float, lon: float, radius: int = 2500) -> dict:
+    """Najbliższe źródła hałasu/odoru/uciążliwości w promieniu `radius` (domyślnie 2,5 km)."""
+    a = f"(around:{radius},{lat},{lon})"
+    q = (
+        "[out:json][timeout:90];("
+        f"way[railway=rail]{a};"
+        f"way[highway~\"^(motorway|trunk|primary)$\"]{a};"
+        f"way[highway=construction]{a};"
+        f"nwr[landuse=cemetery]{a};nwr[amenity=grave_yard]{a};"
+        f"nwr[landuse=farmyard]{a};way[building=farm_auxiliary]{a};way[building=barn]{a};"
+        f"nwr[landuse=industrial]{a};nwr[man_made=works]{a};"
+        f"nwr[landuse=quarry]{a};nwr[landuse=landfill]{a};"
+        f"nwr[man_made=wastewater_plant]{a};"
+        f"node[\"generator:source\"=wind]{a};"
+        f"way[power=line]{a};"
+        ");out geom tags;"
+    )
+    last = ""
+    elems = None
+    for url in _OVERPASS_ENDPOINTS:
+        for _ in range(2):
+            try:
+                r = httpx.post(url, data={"data": q},
+                               headers={"User-Agent": "assistant-properties/1.0 (personal use)"},
+                               timeout=150)
+                elems = r.json().get("elements", [])
+                break
+            except Exception as e:  # noqa: BLE001
+                last = str(e)
+        if elems is not None:
+            break
+    if elems is None:
+        return {"error": f"Overpass (uciążliwości): {last or 'brak odpowiedzi'}"}
+
+    out: dict = {}
+    for el in elems:
+        tags = el.get("tags") or {}
+        cat = _classify_nuisance(tags)
+        if not cat:
+            continue
+        d = _min_dist_to_element(lat, lon, el)
+        if d is None:
+            continue
+        d = round(d)
+        cur = out.get(cat)
+        if cur is None or d < cur["dist_m"]:
+            out[cat] = {"what": _NUISANCE_LABELS[cat], "name": tags.get("name"),
+                        "dist_m": d, "ref": tags.get("ref")}
+    out["_radius_m"] = radius
+    return out
+
+
+def nuisance_notes(nui: dict) -> list[str]:
+    """Zamienia zbyt bliskie uciążliwości na czytelne ostrzeżenia."""
+    notes: list[str] = []
+    if not isinstance(nui, dict) or "error" in nui:
+        return notes
+    for cat, thr in _NUISANCE_ALERT_M.items():
+        v = nui.get(cat)
+        if isinstance(v, dict) and v.get("dist_m") is not None and v["dist_m"] <= thr:
+            nm = f" ({v['name']})" if v.get("name") else ""
+            notes.append(f"UWAGA: {_NUISANCE_LABELS[cat]}{nm} w odległości {v['dist_m']} m.")
+    if isinstance(nui.get("cemetery"), dict) and nui["cemetery"]["dist_m"] < 150:
+        notes.append("Cmentarz bliżej niż 150 m — wg § 3 rozp. MGK z 25.08.1959 (Dz.U. 1959/52/315) "
+                     "to odległość minimalna dla zabudowy mieszkalnej ORAZ studni; redukcja do 50 m "
+                     "wymaga sieci wodociągowej i podłączenia wszystkich budynków (czyli bez studni).")
+    return notes
+
+
 # --- deep-linki / wskazówki do ręcznej weryfikacji ------------------------
 def build_links(lat: float, lon: float, parcel: dict) -> dict:
     pid = parcel.get("id") if isinstance(parcel, dict) else None
@@ -425,7 +582,7 @@ def build_links(lat: float, lon: float, parcel: dict) -> dict:
 
 def analyze(lat: float, lon: float, radius: int = 15000, skip_pois: bool = False,
             offer_area: float | None = None, parcel_nos: list[str] | None = None,
-            region_names: list[str] | None = None) -> dict:
+            region_names: list[str] | None = None, nuisance_radius: int = 2500) -> dict:
     notes: list[str] = []
     # by-XY: jednostki administracyjne (gmina/obręb) z okolicy punktu z ogłoszenia. Sam nr działki z
     # tego wywołania jest niewiarygodny (punkt = centroid miejscowości / adres agencji), ale gmina/powiat
@@ -537,6 +694,12 @@ def analyze(lat: float, lon: float, radius: int = 15000, skip_pois: bool = False
     for cat, val in pois.items():
         if isinstance(val, dict) and "error" in val:
             notes.append(val["error"])
+    # UCIĄŻLIWOŚCI — osobno i w małym promieniu; to jest sprawdzenie rzeczy, o których ogłoszenie milczy
+    nuisances = {} if skip_pois else fetch_nuisances(eff_lat, eff_lon, nuisance_radius)
+    if isinstance(nuisances, dict) and "error" in nuisances:
+        notes.append(nuisances["error"])
+    else:
+        notes.extend(nuisance_notes(nuisances))
     notes.append("Przeznaczenie (MPZP/WZ), transakcje (RCiWN) i właściciel (KW) — brak otwartego API; "
                  "patrz links.mpzp_hint / rcwin_hint / ekw_hint (weryfikacja ręczna).")
     links = build_links(eff_lat, eff_lon, parcel)
@@ -550,6 +713,7 @@ def analyze(lat: float, lon: float, radius: int = 15000, skip_pois: bool = False
         "parcel": parcel,
         "terrain": terrain,
         "pois": pois,
+        "nuisances": nuisances,
         "links": links,
         "notes": notes,
     }
@@ -577,7 +741,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--id", help="ID listingu (pobierze lat/lon z pliku)")
     p.add_argument("--lat", type=float)
     p.add_argument("--lon", type=float)
-    p.add_argument("--radius", type=int, default=15000, help="promień szukania POI (m)")
+    p.add_argument("--radius", type=int, default=15000, help="promień szukania POI/udogodnień (m)")
+    p.add_argument("--nuisance-radius", dest="nuisance_radius", type=int, default=2500,
+                   help="promień szukania uciążliwości: tory, drogi, cmentarz, ferma, przemysł (m)")
     p.add_argument("--skip-pois", action="store_true", help="pomiń Overpass (szybciej)")
     p.add_argument("--parcel-no", dest="parcel_no", action="append",
                    help="nr działki WPROST z ogłoszenia (powtarzalny) — rozwiązywany w ULDK na realne "
@@ -600,6 +766,7 @@ def main(argv: list[str] | None = None) -> int:
         p.error("podaj --id albo --lat i --lon")
 
     result = analyze(lat, lon, radius=args.radius, skip_pois=args.skip_pois, offer_area=offer_area,
+                     nuisance_radius=args.nuisance_radius,
                      parcel_nos=args.parcel_no, region_names=region_names)
     if args.id:
         result["id"] = args.id

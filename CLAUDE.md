@@ -69,6 +69,16 @@ w `.gitignore` — baza ofert to prywatne dane użytkownika (PII z ogłoszeń) i
   (domyślnie `dzialka`); `dom` obejmuje domy/siedliska/gospodarstwa. Dla `kind=dom` rekord `area_m2` to
   powierzchnia **działki/terenu** (pow. budynku w `raw.house_area_m2`); kategorie/filtry zweryfikowane
   empirycznie (OLX cat 18 + `filter_float_area`, Otodom segment `dom` + `terrainAreaMin/Max`, gethome `/domy/`).
+- `scrape_kowr.py` — **zasób KOWR** (nieruchomoscikowr.gov.pl): państwowa ziemia rolna z **przetargów**,
+  niedostępna na żadnym portalu ogłoszeniowym. Ważne różnice od portali: cena to **wywoławcza**
+  (`raw.price_kind`), część oferty to **dzierżawa** (`raw.distribution`; domyślnie zwracamy sprzedaż),
+  a tytuł zawiera powiat/gminę/obręb i **numer działki** → `raw.parcel_no` + `raw.region_name`, którymi
+  `geo_analyze.py --parcel-no --region-name` potwierdza działkę (przy portalach numeru zwykle brak).
+  Portal **nie ma współrzędnych ani działającego filtra lokalizacji w URL** (pole `location` to
+  autouzupełnianie, ignorowane) — powierzchnię/cenę filtruje serwer, lokalizację dopasowujemy po nazwach
+  z tytułu (miejscowość + jej powiat), a dokładny dystans liczy pre-screen. Stąd **dzienny cache**
+  (`scripts/.cache/kowr_RRRRMMDD_*.json`): pełne przejście to kilka stron, a wyszukiwanie pyta raz na
+  lokalizację; `--refresh` wymusza pobranie. Tytuły mają 5 różnych formatów — parser obsługuje wszystkie.
 - `scrape_facebook.py` — deterministyczny czytnik nowych postów z zarejestrowanych grup FB (Playwright,
   trwały profil w `scripts/.fb_profile/` — gitignored); tryby `--login`, `--add-group`, `--scan`, `--commit`.
   Rejestr grup i znaczniki „ostatnio przeczytane" w `fb_groups.py`.
@@ -102,6 +112,17 @@ w `.gitignore` — baza ofert to prywatne dane użytkownika (PII z ogłoszeń) i
   przy `coords_approx: true` (Otodom, część OLX) współrzędne to centroid miejscowości — `parcel`/`terrain`
   są poglądowe (sygnał: `area_m2_geom` ≠ `area_m2` z oferty). MPZP/transakcje/właściciel nie mają
   otwartego API — skrypt zwraca wskazówki, nie dane.
+  Sekcja **`nuisances`** (`--nuisance-radius`, domyślnie 2500 m) — to, o czym ogłoszenie milczy: czynna
+  linia kolejowa, droga krajowa/ekspresowa (także w budowie), cmentarz, zabudowa zagrodowa/ferma, przemysł,
+  wyrobisko, składowisko, oczyszczalnia, wiatraki, linie NN. Odległość do obiektów liniowych liczona do
+  **geometrii**, nie do centroidu (centroid 20-km linii kolejowej leży kilkanaście km od działki, obok
+  której ta linia przechodzi). Przekroczenie progu → ostrzeżenie w `notes`. Osobne, małe zapytanie —
+  `pois` (udogodnienia, 15 km) i `nuisances` (uciążliwości, 2,5 km) to dwa różne zapytania, bo łączne
+  wpadało w timeout Overpassa.
+  **NMT — kolejność osi:** `wgs84_to_pl1992()` zwraca `(easting, northing)`, a GUGiK `GetHByXY` oczekuje
+  `x = northing, y = easting`. Pomylenie ich daje wysokość innego miejsca albo `0` (punkt poza zasięgiem) —
+  dlatego `_nmt_height(northing, easting)` ma taką sygnaturę, a dokładne `0.0` jest traktowane jako BRAK
+  odczytu, nie jako poziom morza. Test kontrolny: Śnieżka ma wychodzić 1602,9 m.
 - `geoportal_link.py` — link do krajowego geoportalu z identyfikatora działki (TERYT) lub z oferty.
 
 ## Skille
@@ -122,8 +143,10 @@ bez zmiany statusu). **Każda prezentacja oferty z ogłoszenia musi zawierać li
 Strony (`index`, `/dzialka/[id]`) mają `prerender = false` i czytają `../properties/listings/*.md`
 **wprost z dysku na każde żądanie** (`src/server/listings.ts` — `gray-matter` na frontmatter + `marked`
 na treść), bez content-layer cache — każda mutacja (status/notatki/deep-dive) widoczna natychmiast po
-odświeżeniu. Interaktywność przez endpointy `src/pages/api/*`. Zdjęcia: junction
-`site/public/photos → properties/photos`. Statusy w UI:
+odświeżeniu. Interaktywność przez endpointy `src/pages/api/*`. Zdjęcia: dowiązanie
+`site/public/photos → properties/photos` — na Windows **junction**, na macOS/Linux **symlink**:
+`mkdir -p site/public && ln -s ../../properties/photos site/public/photos`. **Bez niego galeria jest pusta**
+(pliki leżą na dysku, ale strona nie ma ich czym podać) — to pierwsza rzecz do sprawdzenia po klonie repo. Statusy w UI:
 **active / watch (obserwowane) / favorite (ulubione) / inactive**; filtr „obserwowane" pokazuje też
 ulubione (oba = „do obejrzenia"). Pole **`land_type`** (rodzaj: rolna/siedliskowa/budowlana) na karcie
 pod powierzchnią. Galeria-lightbox (na mobile poziomy pasek), mapa pełnoekranowa (klasa `.fs`, działa na
@@ -152,6 +175,8 @@ a prompt podaje binarce wprost przez argv (`-p … --dangerously-skip-permission
 
 `pip install -r scripts/requirements.txt` (httpx, lxml, PyYAML, playwright). Fallback Otodom oraz
 skaner Facebooka wymagają `python -m playwright install chromium`.
+**Sprawdź, którym interpreterem masz zależności** — na macOS `python` bywa innym Pythonem niż ten, do
+którego `pip` instalował (`python -c "import yaml"`); wtedy uruchamiaj skrypty przez `python3`.
 
 ## Uwagi techniczne
 
