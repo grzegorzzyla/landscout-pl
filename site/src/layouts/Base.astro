@@ -58,6 +58,13 @@ const { title = 'Działki' } = Astro.props;
       .hidden { display:none !important; }
       /* przycisk pełnego ekranu mapy */
       .map-wrap { position: relative; }
+      /* Mapa zostaje widoczna przy przewijaniu listy ofert. Nagłówek jest już sticky, więc mapa klei
+         się POD nim — jego wysokość zmienia się, gdy filtry zawijają się do drugiej linii, dlatego
+         --header-h wyliczamy w JS. Na telefonie wyłączone: mapa zjadałaby pół ekranu przy przewijaniu. */
+      @media (min-width: 641px) {
+        .map-wrap { position: sticky; top: var(--header-h, 56px); z-index: 2; background: var(--bg);
+          box-shadow: 0 6px 12px -8px rgba(0,0,0,.6); }
+      }
       .map-fs { position:absolute; top:8px; right:8px; z-index:600; background:var(--panel); color:var(--text);
         border:1px solid var(--border); border-radius:8px; padding:5px 9px; font-size:12px; cursor:pointer; }
       .map-fs:hover{ border-color:var(--accent); }
@@ -205,6 +212,16 @@ const { title = 'Działki' } = Astro.props;
       <button class="jobs-btn" id="jobs-btn" type="button">⚙ <span id="jobs-count">—</span></button>
     </div>
     <script is:inline>
+      // wysokość sticky-nagłówka → zmienna CSS (mapa klei się dokładnie pod nim, także po zawinięciu filtrów)
+      (function syncHeaderHeight() {
+        const hdr = document.querySelector('header');
+        if (!hdr) return;
+        const set = () => document.documentElement.style.setProperty('--header-h', hdr.offsetHeight + 'px');
+        set();
+        if (window.ResizeObserver) new ResizeObserver(set).observe(hdr);
+        window.addEventListener('resize', set);
+      })();
+
       // Klient backendu: toast + uruchamianie zadań Claude Code z pollingiem + zmiana statusu.
       (function () {
         let el;
