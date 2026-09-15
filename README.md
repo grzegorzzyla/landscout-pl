@@ -71,6 +71,48 @@ Ocena LLM czyta pełny opis każdego ogłoszenia i punktuje właśnie względem 
 
 ![Ocena dopasowania i historia oferty](docs/screenshots/analiza.png)
 
+## Konfiguracja adresowo.pl
+
+Adresowo to jedyne ze źródeł, które trzeba (opcjonalnie) skonfigurować — bo pozwala wyszukiwać po
+**wielu gminach naraz**, a identyfikatory gmin są wewnętrzne dla portalu i nie da się ich wyliczyć
+z nazwy miejscowości.
+
+**Nic nie musisz ustawiać.** Bez konfiguracji scraper sam składa adres dla województwa, w którym leży
+dana lokalizacja, używając progów z `criteria.md` (`area_min` i `price_per_m2_max_rolna`).
+
+Wpis ma sens, gdy chcesz **wskazać konkretne gminy** zamiast całego województwa. Wtedy w
+`properties/criteria.md`, we frontmatterze:
+
+```yaml
+adresowo_searches:
+  Rozprza: "https://adresowo.pl/f/dzialki/182845_182930_.../fz3z4z5z6z7z8zb"
+  Sulejów: "https://adresowo.pl/f/dzialki/182845_182930_.../fz3z4z5z6z7z8zb"
+```
+
+Klucz to nazwa lokalizacji z listy `locations`. Adres zdobywasz tak: wejdź na
+[adresowo.pl](https://adresowo.pl/dzialki/), ustaw filtry (Typ działki, Źródło: **Bezpośrednie**,
+Pow. działki, Cena/m², wybór gmin), kliknij „Pokaż ogłoszenia" i skopiuj adres z paska przeglądarki.
+
+### Jak czytać adres wyszukiwania
+
+```
+/f/dzialki/ fds        z4z5z8       zb            _t10000       _u-5      [_l2]
+            │          │            │             │             │         │
+   kod województwa   typy działki   źródło:     pow. ≥ 10000 m²  cena/m²   strona 2
+                                    bezpośrednie                 ≤ 5 zł
+```
+
+Zamiast kodu województwa mogą stać identyfikatory gmin rozdzielone `_` (jak w przykładzie wyżej).
+Kody województw: `fds` dolnośląskie, `fkp` kujawsko-pomorskie, `flu` lubelskie, `flb` lubuskie,
+`fld` łódzkie, `fma` małopolskie, `fmz` mazowieckie, `fop` opolskie, `fpk` podkarpackie,
+`fpd` podlaskie, `fpm` pomorskie, `fsl` śląskie, `fsk` świętokrzyskie, `fwn` warmińsko-mazurskie,
+`fwp` wielkopolskie, `fzp` zachodniopomorskie.
+
+> **Uwaga przy własnym parsowaniu:** karta oferty podaje powierzchnię raz w **m²**, a raz w **ha**
+> (zależnie od wielkości działki), a separator tysięcy w cenie przychodzi jako encja `&nbsp;`.
+> Pominięcie któregokolwiek z tych przypadków daje parser, który wygląda na sprawny, a po cichu gubi
+> wszystkie duże działki albo wszystkie ceny.
+
 ## Wymagania
 
 - **Python 3.10+** i **Node 20+**

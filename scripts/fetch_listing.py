@@ -284,11 +284,87 @@ def fetch_morizon(url: str, transaction: str) -> dict | None:
     return rec
 
 
+# --- adresowo.pl ----------------------------------------------------------
+def fetch_adresowo(url: str, transaction: str) -> dict | None:
+    """Karta oferty adresowo.pl — dane siedzą w JSON-LD (@graph):
+    Place{address.streetAddress, geo{latitude,longitude}, name, description} + Offer{price}.
+    W przeciwieństwie do listy, karta podaje REALNE współrzędne (nie centroid miejscowości).
+    """
+    import scrape_adresowo as A
+    html = A._fetch(url)                      # normalizuje encje (&nbsp;) — patrz scrape_adresowo
+    place, offer = {}, {}
+    for m in re.finditer(r'<script type="application/ld\+json"[^>]*>(.*?)</script>', html, re.S):
+        try:
+            data = json.loads(m.group(1))
+        except Exception:  # noqa: BLE001
+            continue
+        for node in (data.get("@graph") or [data]):
+            t = node.get("@type")
+            if t == "Place":
+                place = node
+            elif t == "Offer":
+                offer = node
+    if not place and not offer:
+        return None
+
+    rec = common.empty_record()
+    rec["source"] = "adresowo"
+    m = re.search(r"/o/([a-z0-9-]+)$", url)
+    rec["source_id"] = m.group(1).rsplit("-", 1)[-1] if m else url.rsplit("/", 1)[-1]
+    rec["url"] = url
+    rec["title"] = place.get("name") or None
+    rec["transaction"] = transaction
+    try:
+        rec["price"] = int(float(offer.get("price"))) if offer.get("price") else None
+    except (TypeError, ValueError):
+        rec["price"] = None
+
+    # powierzchnia: z nazwy ("… - 2,02 ha") albo z treści strony
+    area = None
+    for src in (place.get("name") or "", html):
+        mm = re.search(r"([\d]+(?:[.,][\d]+)?)\s*ha\b", src)
+        if mm:
+            area = int(round(float(mm.group(1).replace(",", ".")) * 10000))
+            break
+        mm = re.search(r"([\d\s]{3,9})\s*m²", src)
+        if mm:
+            try:
+                area = int(re.sub(r"\s", "", mm.group(1)))
+            except ValueError:
+                area = None
+            break
+    rec["area_m2"] = area
+    if rec["price"] and rec["area_m2"]:
+        rec["price_per_m2"] = round(rec["price"] / rec["area_m2"])
+
+    geo = place.get("geo") or {}
+    try:
+        rec["lat"] = float(geo["latitude"]); rec["lon"] = float(geo["longitude"])
+        rec["coords_approx"] = False        # karta podaje realną pozycję działki
+    except (KeyError, TypeError, ValueError):
+        rec["coords_approx"] = True
+
+    addr = ((place.get("address") or {}).get("streetAddress") or "")
+    parts = [x.strip() for x in addr.split(",") if x.strip()]
+    rec["location"] = {"city": parts[0] if parts else None,
+                       "region": parts[-1] if len(parts) > 1 else None,
+                       "address": addr or None}
+    mt = re.search(r"Działka\s+([a-ząćęłńóśźż-]+)", place.get("name") or "", re.I)
+    rec["plot_type"] = mt.group(1).lower() if mt else None
+    rec["description"] = place.get("description") or None
+    rec["owner_type"] = "private"
+    rec["images"] = sorted(set(re.findall(r'https://s\d\.adresowa\.pl/[^"\s]+\.webp', html)))[:40]
+    rec["raw"] = {"street_address": addr or None}
+    return rec
+
+
 PORTALS = {
     "olx.pl": fetch_olx,
     "otodom.pl": fetch_otodom,
+
     "gethome.pl": fetch_gethome,
     "morizon.pl": fetch_morizon,
+    "adresowo.pl": fetch_adresowo,
 }
 
 

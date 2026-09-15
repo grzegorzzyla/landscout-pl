@@ -39,12 +39,49 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36")
 MAX_PAGES = 12
 
-_TYPE_MAP = {
-    "rolna": "dzialki-rolne", "rolno-budowlana": "dzialki-rolno-budowlane",
-    "budowlana": "dzialki-budowlane", "leśna": "dzialki-lesne", "lesna": "dzialki-lesne",
-    "siedliskowa": "dzialki-siedliskowe", "rekreacyjna": "dzialki-rekreacyjne",
-    "inwestycyjna": "dzialki-inwestycyjne", "rod": "rod", "inna": "inne",
+# Kody województw w adresach adresowo (odczytane ze strony /dzialki/). Pozwalają ZŁOŻYĆ adres
+# wyszukiwania bez klikania w portalu — patrz build_search_url().
+WOJ_CODES = {
+    "dolnośląskie": "fds", "kujawsko-pomorskie": "fkp", "lubelskie": "flu", "lubuskie": "flb",
+    "mazowieckie": "fmz", "małopolskie": "fma", "opolskie": "fop", "podkarpackie": "fpk",
+    "podlaskie": "fpd", "pomorskie": "fpm", "warmińsko-mazurskie": "fwn", "wielkopolskie": "fwp",
+    "zachodniopomorskie": "fzp", "łódzkie": "fld", "śląskie": "fsl", "świętokrzyskie": "fsk",
 }
+
+# Typy działki w kodzie filtrów (z3..z8). Kolejność ustalona empirycznie z adresów portalu.
+TYPE_CODES = {
+    "budowlana": "z3", "rolno-budowlana": "z4", "siedliskowa": "z5",
+    "rolna": "z8", "leśna": "z6", "rekreacyjna": "z7",
+}
+SRC_DIRECT = "zb"          # Źródło: Bezpośrednie
+
+
+def build_search_url(voivodeship: str, area_min: int | None = None,
+                     price_per_m2_max: int | None = None,
+                     types: list[str] | None = None, direct_only: bool = True) -> str | None:
+    """Złóż adres wyszukiwania z parametrów zamiast kopiować go z przeglądarki.
+
+    Schemat (rozszyfrowany z adresów portalu i potwierdzony eksperymentem — zmiana każdego członu
+    zmienia liczbę wyników w przewidywalny sposób):
+        /f/dzialki/<kod_woj><typy><źródło>[_t<min m²>][_u-<max zł/m²>][_lN]
+    np. /f/dzialki/fdsz4z5z8zb_t10000_u-5  = dolnośląskie, rolno-bud./siedl./rolna,
+        bezpośrednie, od 1 ha, do 5 zł/m².
+    """
+    code = WOJ_CODES.get(voivodeship.lower())
+    if not code:
+        return None
+    seg = code
+    for t in (types or ["rolno-budowlana", "siedliskowa", "rolna"]):
+        c = TYPE_CODES.get(t.lower())
+        if c:
+            seg += c
+    if direct_only:
+        seg += SRC_DIRECT
+    if area_min:
+        seg += f"_t{int(area_min)}"
+    if price_per_m2_max:
+        seg += f"_u-{int(price_per_m2_max)}"
+    return f"{BASE}/f/dzialki/{seg}"
 
 
 def _slug(name: str) -> str:
@@ -110,23 +147,68 @@ def _fetch(url: str) -> str:
 
 
 def _load_config() -> dict:
+    """Adresy wyszukiwań: NAJPIERW criteria.md (jedno miejsce, które edytuje użytkownik),
+    potem opcjonalny plik JSON. W criteria.md, we frontmatterze:
+
+        adresowo_searches:
+          Wleń: "https://adresowo.pl/f/dzialki/fdsz4z5z8zb_t10000_u-5"
+    """
+    out: dict = {}
+    crit = os.path.join(common.PROJECT_DIR, "properties", "criteria.md")
+    if os.path.exists(crit):
+        try:
+            import yaml
+            with open(crit, encoding="utf-8") as fh:
+                raw = fh.read()
+            m = re.match(r"^---\n(.*?)\n---\n", raw, re.S)
+            if m:
+                fm = yaml.safe_load(m.group(1)) or {}
+                out.update({str(k): str(v) for k, v in (fm.get("adresowo_searches") or {}).items()})
+        except Exception:  # noqa: BLE001
+            pass
     if os.path.exists(CONFIG):
         try:
             with open(CONFIG, encoding="utf-8") as fh:
-                return json.load(fh)
+                for k, v in (json.load(fh) or {}).items():
+                    if not k.startswith("_"):
+                        out.setdefault(str(k), str(v))
         except Exception:  # noqa: BLE001
-            return {}
-    return {}
+            pass
+    return out
 
 
-def _resolve_search_url(location: str, explicit: str | None) -> tuple[str | None, str]:
-    """Zwraca (url, skąd). Kolejność: --search-url → konfiguracja → strona miasta."""
+def _voivodeship_of(location: str) -> str | None:
+    """Województwo dla miejscowości — z geokodera (cache na dysku)."""
+    try:
+        hit = common.osm_lookup(f"{location}, Polska")
+        st = ((hit or {}).get("address") or {}).get("state")
+        if st:
+            return re.sub(r"^wojew[oó]dztwo\s+", "", st.strip(), flags=re.I).lower()
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _resolve_search_url(location: str, explicit: str | None,
+                        area_min: int | None = None,
+                        price_per_m2_max: int | None = None) -> tuple[str | None, str]:
+    """Zwraca (url, skąd). Kolejność:
+    1) --search-url,
+    2) wpis w `adresowo_searches` (criteria.md / JSON) — pozwala wskazać KONKRETNE gminy,
+       czego nie da się złożyć z samej nazwy (identyfikatory gmin są wewnętrzne dla portalu),
+    3) automat: adres dla WOJEWÓDZTWA danej miejscowości + progi z kryteriów,
+    4) strona miasta `/dzialki/<slug>/` (istnieje tylko dla większych miejscowości).
+    """
     if explicit:
         return explicit.rstrip("/"), "argument --search-url"
-    cfg = _load_config()
-    for key, url in cfg.items():
+    for key, url in _load_config().items():
         if _slug(key) == _slug(location):
-            return url.rstrip("/"), f"konfiguracja ({os.path.basename(CONFIG)})"
+            return url.rstrip("/"), "konfiguracja (criteria.md / adresowo_searches.json)"
+    woj = _voivodeship_of(location)
+    if woj:
+        built = build_search_url(woj, area_min, price_per_m2_max)
+        if built:
+            return built, f"złożony automatycznie dla woj. {woj}"
     return f"{BASE}/dzialki/{_slug(location)}/", "strona miasta (fallback)"
 
 
@@ -159,8 +241,20 @@ def normalize(o: dict, kind: str, transaction: str) -> dict:
     return rec
 
 
+def _criteria_ppm2() -> int | None:
+    """Docelowa cena zł/m² z criteria.md (price_per_m2_max_rolna) — do złożenia adresu."""
+    try:
+        import yaml
+        crit = os.path.join(common.PROJECT_DIR, "properties", "criteria.md")
+        m = re.match(r"^---\n(.*?)\n---\n", open(crit, encoding="utf-8").read(), re.S)
+        return (yaml.safe_load(m.group(1)) or {}).get("price_per_m2_max_rolna") if m else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def scrape(args) -> tuple[list[dict], dict]:
-    base, origin = _resolve_search_url(args.location, args.search_url)
+    base, origin = _resolve_search_url(args.location, args.search_url,
+                                       args.area_min, _criteria_ppm2())
     meta = {"source": "adresowo", "location": args.location, "search_url": base,
             "url_origin": origin,
             "note": ("adresowo = oferty głównie BEZPOŚREDNIO od właścicieli; lista nie ma współrzędnych "

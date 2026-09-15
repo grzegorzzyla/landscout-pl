@@ -18,6 +18,13 @@ price_min: null              # PLN (null = brak dolnego limitu)
 price_max: 500000            # PLN — górny budżet na całość transakcji
 price_per_m2_max_rolna: 5    # zł/m² — DOCELOWA cena ziemi ROLNEJ (patrz opis). UWAGA: parametr czytany przez
                              # OCENĘ (LLM), nie przez pre-screen — pre-screen filtruje tylko po price_max
+adresowo_searches:           # adresowo.pl — gotowe adresy wyszukiwań (opcjonalne, patrz README)
+                             # Klucz = nazwa lokalizacji z listy `locations` powyżej.
+                             # Adres kopiujesz z paska przeglądarki po ustawieniu filtrów na adresowo.pl
+                             # (Typ działki, Źródło: Bezpośrednie, Pow. działki, Cena/m², wybór gmin).
+                             # Bez wpisu scraper sam złoży adres dla województwa danej lokalizacji.
+  Rozprza: "https://adresowo.pl/f/dzialki/182845_182930_182979_183076_183145_183213_183415_183468_183579_183862_184007/fz3z4z5z6z7z8zb"
+  Sulejów: "https://adresowo.pl/f/dzialki/182845_182930_182979_183076_183145_183213_183415_183468_183579_183862_184007/fz3z4z5z6z7z8zb"
 score_threshold: 45          # próg pomocniczy; o losie NOWEJ oferty decyduje WERDYKT
                              # eval: dopasowane→obserwowane, do-weryfikacji→aktywne, odrzucone→deleted
 ---
