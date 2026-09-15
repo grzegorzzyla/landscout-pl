@@ -239,6 +239,39 @@ const allTags = [...new Set(entries.flatMap((e) => e.data.tags ?? []))].sort((a,
     const RANK = { inactive: 0, active: 1, watch: 2, favorite: 3 };
     const grid = document.getElementById('grid');
     const cards = [...document.querySelectorAll('.card')];
+
+    // --- najechanie na kafelek → podświetlenie punktu na mapie -------------
+    // Mapa przewija się TYLKO wtedy, gdy punkt jest poza widokiem — inaczej przy przesuwaniu myszą
+    // po liście skakałaby przy każdym kafelku i nie dałoby się jej czytać.
+    const MARK_NORMAL = { radius: 8, color: '#0f1115', weight: 2 };
+    const MARK_HOVER = { radius: 13, color: '#ffffff', weight: 3 };
+    let hoveredId = null;
+
+    function hoverPoint(id, on) {
+      const mk = markers[id];
+      if (!mk) return;
+      if (!on) { mk.setStyle(MARK_NORMAL); return; }
+      mk.setStyle(MARK_HOVER);
+      mk.bringToFront();
+      // margines ujemny: punkt tuż przy krawędzi też uznajemy za „niewidoczny"
+      if (!map.getBounds().pad(-0.12).contains(mk.getLatLng())) {
+        map.panTo(mk.getLatLng(), { animate: true, duration: 0.4 });
+      }
+    }
+
+    cards.forEach((c) => {
+      const id = c.dataset.id;
+      c.addEventListener('mouseenter', () => {
+        if (hoveredId && hoveredId !== id) hoverPoint(hoveredId, false);
+        hoveredId = id;
+        c.classList.toggle('no-geo', !markers[id]);   // oferta bez współrzędnych — nie ma co pokazać
+        hoverPoint(id, true);
+      });
+      c.addEventListener('mouseleave', () => {
+        hoverPoint(id, false);
+        if (hoveredId === id) hoveredId = null;
+      });
+    });
     const count = document.getElementById('count');
     // tagi każdego kafelka (lowercase) — do filtra AND; policzone raz
     cards.forEach((c) => {

@@ -1,12 +1,25 @@
 #!/usr/bin/env bash
 # cdp — uruchom Claude Code CLI (NIE Claude Desktop). Wariant POSIX (macOS/Linux) dla open-source.
-# Rozwiązanie ścieżki: CLAUDE_EXE → `claude` z PATH.
+# Rozwiązanie ścieżki: CLAUDE_EXE → `claude` z PATH → ~/.claude/local → binarka rozszerzenia edytora.
 # Tryby: `cdp --which` | `cdp -p "<prompt>"` (headless) | `cdp ["<nazwa sesji>"]` (interaktywny).
 set -euo pipefail
 
+# Kolejność szukania: CLAUDE_EXE → `claude` z PATH → instalacja lokalna → binarka rozszerzenia VS Code.
+# Ta ostatnia bywa JEDYNĄ na maszynie, gdy ktoś używa Claude Code wyłącznie z poziomu edytora — a jej
+# ścieżka zawiera numer wersji, więc bierzemy najnowszą zamiast wpisywać ją na sztywno.
 resolve() {
   if [ -n "${CLAUDE_EXE:-}" ] && [ -x "$CLAUDE_EXE" ]; then echo "$CLAUDE_EXE"; return; fi
   if command -v claude >/dev/null 2>&1; then command -v claude; return; fi
+  for cand in "$HOME/.claude/local/claude" "$HOME/.local/bin/claude"; do
+    if [ -x "$cand" ]; then echo "$cand"; return; fi
+  done
+  for dir in "$HOME/.vscode/extensions" "$HOME/.vscode-insiders/extensions" \
+             "$HOME/.cursor/extensions" "$HOME/.windsurf/extensions"; do
+    [ -d "$dir" ] || continue
+    cand="$(ls -d "$dir"/anthropic.claude-code-* 2>/dev/null \
+            | sort -V | tail -1)/resources/native-binary/claude"
+    if [ -x "$cand" ]; then echo "$cand"; return; fi
+  done
   echo "Nie znaleziono Claude Code (claude). Ustaw CLAUDE_EXE." >&2; exit 1
 }
 

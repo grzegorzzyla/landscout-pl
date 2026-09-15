@@ -67,7 +67,32 @@ function resolveClaudeExe(): string {
   if (process.env.CLAUDE_EXE && existsSync(process.env.CLAUDE_EXE)) return process.env.CLAUDE_EXE;
   const viaCdp = resolveViaCdp();
   if (viaCdp) return viaCdp;
-  // fallback: lokalne rozwiązanie (najnowsza wersja w %APPDATA%\Claude\claude-code\<wer>\claude.exe)
+  // Fallback gdy cdp nie zadziałał. UWAGA: ścieżka %APPDATA% istnieje tylko na Windowsie — na macOS/Linux
+  // sklejała się w bezsensowne ~/AppData/Roaming/... i taki komunikat trafiał do użytkownika.
+  if (process.platform !== 'win32') {
+    const candidates = [
+      join(os.homedir(), '.claude', 'local', 'claude'),
+      join(os.homedir(), '.local', 'bin', 'claude'),
+      '/opt/homebrew/bin/claude',
+      '/usr/local/bin/claude',
+    ];
+    for (const c of candidates) if (existsSync(c)) return c;
+    // Binarka rozszerzenia edytora bywa jedyną na maszynie (gdy ktoś używa Claude Code tylko z IDE).
+    // Katalog zawiera numer wersji, więc bierzemy najnowszy.
+    for (const extRoot of ['.vscode/extensions', '.vscode-insiders/extensions',
+                           '.cursor/extensions', '.windsurf/extensions']) {
+      const dir = join(os.homedir(), ...extRoot.split('/'));
+      if (!existsSync(dir)) continue;
+      const hit = readdirSync(dir)
+        .filter((d) => d.startsWith('anthropic.claude-code-'))
+        .sort()
+        .reverse()
+        .map((d) => join(dir, d, 'resources', 'native-binary', 'claude'))
+        .find((f) => existsSync(f));
+      if (hit) return hit;
+    }
+    throw new Error('Nie znaleziono Claude Code. Ustaw CLAUDE_EXE albo zainstaluj CLI (`claude`).');
+  }
   const base = join(os.homedir(), 'AppData', 'Roaming', 'Claude', 'claude-code');
   if (!existsSync(base)) throw new Error('Nie znaleziono Claude Code (ustaw CLAUDE_EXE lub sprawdź bin/cdp): ' + base);
   const cmp = (a: string, b: string) => {

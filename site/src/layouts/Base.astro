@@ -29,8 +29,14 @@ const { title = 'Działki' } = Astro.props;
       #map { height: 42vh; width: 100%; z-index: 1; }
       main { padding: 14px 16px 40px; }
       .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+      /* najechanie na kafelek podświetla punkt na mapie; gdy oferta nie ma współrzędnych,
+         trzeba to pokazać — inaczej brak reakcji mapy wygląda na zepsute */
+      .card.no-geo { outline: 1px dashed var(--border); }
+      .card.no-geo::after { content: "bez pozycji na mapie"; position: absolute; right: 8px; bottom: 6px;
+        font-size: 11px; color: var(--muted); background: var(--panel); padding: 1px 6px; border-radius: 6px;
+        border: 1px solid var(--border); pointer-events: none; }
       .card { background: var(--panel); border:1px solid var(--border); border-radius: 12px; overflow:hidden;
-        display:flex; flex-direction:column; transition: border-color .15s; }
+        display:flex; flex-direction:column; transition: border-color .15s; position: relative; }
       .card:hover { border-color: var(--accent); }
       .card .thumb { aspect-ratio: 4/3; background:#0a0c10 center/cover no-repeat; }
       .card .body { padding: 10px 12px; display:flex; flex-direction:column; gap:6px; }
