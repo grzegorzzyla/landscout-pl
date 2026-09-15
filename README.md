@@ -14,7 +14,7 @@ stoku, z widokiem, w leśnej otulinie — bez codziennego przeklikiwania setek o
 ## Jak to działa
 
 ```
-portale (OLX / Otodom / Morizon / gethome) + KOWR (przetargi) + grupy Facebook
+portale (OLX / Otodom / Morizon / gethome) + adresowo + KOWR (przetargi) + grupy FB
         │  listing — twarde filtry portalu (lokalizacja, powierzchnia, cena)
         ▼
    pre-screen — tani odsiew na danych z listy (geo/area/price/kategoria)
@@ -37,8 +37,11 @@ Ocena LLM czyta pełny opis każdego ogłoszenia i punktuje właśnie względem 
 
 ## Co potrafi
 
-- **4 portale + KOWR + Facebook**: OLX (JSON API), Otodom (`__NEXT_DATA__` + fallback Playwright),
-  Morizon, gethome oraz skaner zarejestrowanych grup FB (Playwright, trwały profil).
+- **5 portali + KOWR + Facebook**: OLX (JSON API), Otodom (`__NEXT_DATA__` + fallback Playwright),
+  Morizon, adresowo, gethome oraz skaner zarejestrowanych grup FB (Playwright, trwały profil).
+- **adresowo — oferty bezpośrednio od właścicieli** (pośrednicy tylko płatnie) i wyszukiwanie po
+  **wielu gminach naraz**, czego portale nie oferują. Bywa najbogatszym źródłem tam, gdzie duże
+  portale mają cienko — na terenach wiejskich.
 - **KOWR — państwowa ziemia rolna z przetargów**, której nie ma na portalach ogłoszeniowych. Inny model
   danych niż ogłoszenie: cena jest **wywoławcza**, część zasobu to dzierżawa, a tytuł oferty zawiera
   obręb i **numer działki** — dzięki czemu analiza terenowa potwierdza działkę w ewidencji, zamiast

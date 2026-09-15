@@ -79,6 +79,17 @@ w `.gitignore` — baza ofert to prywatne dane użytkownika (PII z ogłoszeń) i
   z tytułu (miejscowość + jej powiat), a dokładny dystans liczy pre-screen. Stąd **dzienny cache**
   (`scripts/.cache/kowr_RRRRMMDD_*.json`): pełne przejście to kilka stron, a wyszukiwanie pyta raz na
   lokalizację; `--refresh` wymusza pobranie. Tytuły mają 5 różnych formatów — parser obsługuje wszystkie.
+- `scrape_adresowo.py` — **adresowo.pl**: portal ogłoszeń **bezpośrednio od właścicieli** (pośrednicy
+  tylko płatnie), więc inna podaż niż OLX/Otodom/Morizon. Obsługuje **wiele gmin naraz**, czego portale
+  nie dają: adres ma postać `/f/dzialki/<id_gminy>_<id_gminy>_…/<kod_filtrów>` (`z3`–`z8` = typy działki,
+  `zb` = źródło bezpośrednie), paginacja to sufiks `_l2`, `_l3`. Identyfikatory gmin są wewnętrzne dla
+  portalu i nie da się ich wyliczyć z nazwy — dlatego lokalizacje mapuje
+  `properties/adresowo_searches.json` (nazwa z `criteria.md` → gotowy adres zapisanego wyszukiwania,
+  skopiowany z paska przeglądarki); bez wpisu scraper próbuje strony miasta `/dzialki/<slug>/`.
+  **Dwie pułapki parsowania, obie ciche:** powierzchnia bywa podana w **ha**, nie w m² (regex liczący
+  tylko `m²` gubi WSZYSTKIE duże działki — czyli dokładnie te szukane), a separator tysięcy w cenie
+  przychodzi jako encja `&nbsp;`, nie jako `\u00a0` (wtedy wszystkie ceny wychodzą puste, a powierzchnie
+  przechodzą i parser wygląda na sprawny). Encje normalizowane przy pobraniu strony.
 - `scrape_facebook.py` — deterministyczny czytnik nowych postów z zarejestrowanych grup FB (Playwright,
   trwały profil w `scripts/.fb_profile/` — gitignored); tryby `--login`, `--add-group`, `--scan`, `--commit`.
   Rejestr grup i znaczniki „ostatnio przeczytane" w `fb_groups.py`.

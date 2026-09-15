@@ -1,0 +1,5 @@
+{
+  "_opis": "Mapowanie lokalizacji z criteria.md na zapisane wyszukiwania adresowo.pl. Identyfikatory gmin w adresie są wewnętrzne dla portalu i nie da się ich wyliczyć z nazwy — adres kopiujesz z paska przeglądarki po ustawieniu filtrów na adresowo.pl (Typ działki, Źródło: Bezpośrednie, wybór wielu gmin). Klucz = nazwa lokalizacji z criteria.md.",
+  "Rozprza": "https://adresowo.pl/f/dzialki/182845_182930_182979_183076_183145_183213_183415_183468_183579_183862_184007/fz3z4z5z6z7z8zb",
+  "Sulejów": "https://adresowo.pl/f/dzialki/182845_182930_182979_183076_183145_183213_183415_183468_183579_183862_184007/fz3z4z5z6z7z8zb"
+}
