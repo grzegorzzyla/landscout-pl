@@ -45,6 +45,12 @@ services:
       LANDSCOUT_DEBUG: ${LANDSCOUT_DEBUG:-}
       # Godzina, o której startują zadania zlecone „na noc" (0-23).
       NIGHT_HOUR: ${NIGHT_HOUR:-3}
+      # --- powiadomienia (opcjonalne, ustaw co najmniej jeden kanał) ---------
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      NTFY_URL: ${NTFY_URL:-}
+      NTFY_TOKEN: ${NTFY_TOKEN:-}
     volumes:
       # Dane = jedyne źródło prawdy. Trzymane POZA kontenerem, żeby przeżyły każdą przebudowę.
       - ${DATA_ROOT:-/volume1/docker/landscout}/properties:/app/properties

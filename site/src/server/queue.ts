@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, create
 import { join } from 'node:path';
 import { PROJECT_DIR, resolveClaudeExeCached } from './runner';
 import { claudeEnv } from './claude-auth';
+import { notify } from './notify';
 
 const STATE_DIR = process.env.STATE_DIR || '/app/state';
 const JOBS_DIR = join(STATE_DIR, 'jobs');
@@ -179,6 +180,20 @@ function runTask(t: Task): void {
     }
     save(t);
     log.end(`\n=== ${new Date().toISOString()} koniec: ${t.status}\n`);
+
+    // Powiadomienie wysyłamy PO zapisie stanu i bez czekania — kanał może być niedostępny,
+    // a to nie powód, żeby blokować kolejkę.
+    const mins = t.startedAt ? Math.round((t.finishedAt! - t.startedAt) / 60000) : 0;
+    const what = t.kind === 'search' ? 'Wyszukiwanie' : 'Skan grup FB';
+    void notify(
+      t.status === 'done' ? `✅ ${what} zakończone` : `⚠️ ${what} nie powiodło się`,
+      [
+        t.note ? `Uwagi: ${t.note}` : '',
+        `Czas: ${mins} min`,
+        t.summary || t.error || '',
+      ].filter(Boolean).join('\n'),
+    );
+
     running = null;
     tick();
   });

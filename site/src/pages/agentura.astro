@@ -45,6 +45,18 @@ import Base from '../layouts/Base.astro';
     </section>
 
     <section class="panel">
+      <h3>Powiadomienia</h3>
+      <p class="muted">
+        Wysyłane po zakończeniu zadania z kolejki. Konfiguracja przez zmienne w Portainerze —
+        nieustawione kanały są pomijane. Uwaga o ntfy: publiczne <code>ntfy.sh</code> działa zza
+        NAT-u, bo NAS tylko wysyła; własną instancję warto wystawić w tailnecie.
+      </p>
+      <div id="notif" class="checks"></div>
+      <button class="btn ghost" id="notif-test" type="button" style="margin-top:8px;">Wyślij próbne</button>
+      <p class="muted" id="notif-msg" hidden></p>
+    </section>
+
+    <section class="panel">
       <h3>Token Claude Code</h3>
       <p class="muted">
         Agentura działa na Twojej subskrypcji. Gdy token wygaśnie, wygeneruj nowy na swoim
@@ -215,6 +227,33 @@ import Base from '../layouts/Base.astro';
       }
       document.getElementById('q-night').addEventListener('click', () => addTask('night'));
       document.getElementById('q-now').addEventListener('click', () => addTask('now'));
+
+      // --- powiadomienia ---------------------------------------------------
+      async function loadNotif() {
+        const el = document.getElementById('notif');
+        try {
+          const d = await (await fetch('/api/notify/test')).json();
+          el.innerHTML = '';
+          for (const c of d.channels) {
+            const row = document.createElement('div');
+            row.className = 'check ' + (c.configured ? 'ok' : '');
+            const n = document.createElement('strong');
+            n.textContent = (c.configured ? '✓ ' : '· ') + c.name;
+            const s2 = document.createElement('span');
+            s2.textContent = c.configured ? 'skonfigurowany' : 'nieskonfigurowany';
+            row.appendChild(n); row.appendChild(s2);
+            el.appendChild(row);
+          }
+        } catch (e) { el.textContent = 'Nie udało się sprawdzić: ' + e.message; }
+      }
+      document.getElementById('notif-test').addEventListener('click', async () => {
+        const m = document.getElementById('notif-msg');
+        m.hidden = false; m.textContent = 'wysyłanie…';
+        const d = await (await fetch('/api/notify/test', { method: 'POST' })).json().catch(() => ({}));
+        m.textContent = d.ok ? ('✓ wysłane: ' + d.sent.join(', ')) : ('⚠ ' + (d.error || 'błąd'));
+        m.style.color = d.ok ? 'var(--good)' : 'var(--bad)';
+      });
+      loadNotif();
 
       loadQueue();
       setInterval(loadQueue, 15000);   // odświeżanie statusu w trakcie wykonywania
