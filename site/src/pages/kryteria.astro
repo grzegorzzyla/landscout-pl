@@ -1,0 +1,148 @@
+---
+export const prerender = false;
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Kryteria">
+  <header>
+    <a class="iconbtn" href="/" aria-label="Powrót do listy">←</a>
+    <h1>📋 Kryteria</h1>
+    <span class="muted" id="meta"></span>
+    <button class="btn" id="save" type="button">Zapisz</button>
+  </header>
+
+  <main class="agent-main">
+    <section class="panel">
+      <h3>Powiedz agentowi, co zmienić</h3>
+      <p class="muted">
+        Szybsze niż ręczna edycja przy zmianach, które dotykają kilku miejsc naraz — agent sam
+        znajdzie sprzeczności (np. „bliska stacja kolejowa" kontra „z dala od torów") i je rozwiąże.
+      </p>
+      <div class="row" style="gap:8px; align-items:stretch; flex-wrap:wrap;">
+        <input id="instr" placeholder="np. „podnieś minimum do 2 ha i dorzuć okolice Gorzkowic"" style="flex:1; min-width:240px;" />
+        <button class="btn" id="ask" type="button">Zmień</button>
+      </div>
+      <pre id="agent-out" class="joblog" hidden></pre>
+    </section>
+
+    <section class="panel">
+      <h3>Edycja bezpośrednia</h3>
+      <p class="muted" id="valid">—</p>
+      <textarea id="text" class="criteria-edit" spellcheck="false"></textarea>
+    </section>
+
+    <section class="panel">
+      <h3>Historia zmian</h3>
+      <p class="muted">Każdy zapis odkłada poprzednią wersję. Podejrzyj i wklej do edytora, żeby cofnąć.</p>
+      <div id="history" class="checks"></div>
+    </section>
+  </main>
+
+  <Fragment slot="scripts">
+    <script is:inline>
+      const ta = document.getElementById('text');
+      const meta = document.getElementById('meta');
+      const valid = document.getElementById('valid');
+      const hist = document.getElementById('history');
+
+      function showValid(v) {
+        valid.textContent = v.ok ? ('✓ wygląda poprawnie — ' + (v.summary || '')) : ('⚠ ' + v.error);
+        valid.style.color = v.ok ? 'var(--good)' : 'var(--bad)';
+      }
+
+      async function load() {
+        const r = await fetch('/api/criteria');
+        const d = await r.json();
+        ta.value = d.text || '';
+        meta.textContent = d.mtime ? 'zmienione ' + new Date(d.mtime).toLocaleString('pl-PL') : 'brak pliku';
+        hist.innerHTML = '';
+        for (const h of (d.history || [])) {
+          const row = document.createElement('div');
+          row.className = 'check';
+          const name = document.createElement('strong');
+          name.textContent = new Date(h.mtime).toLocaleString('pl-PL');
+          const btn = document.createElement('button');
+          btn.className = 'btn ghost'; btn.type = 'button'; btn.textContent = 'wczytaj do edytora';
+          btn.addEventListener('click', async () => {
+            const rr = await fetch('/api/criteria?history=' + encodeURIComponent(h.name));
+            const dd = await rr.json();
+            if (dd.ok) { ta.value = dd.text; check(); }
+          });
+          row.appendChild(name); row.appendChild(btn);
+          hist.appendChild(row);
+        }
+        check();
+      }
+
+      let checkTimer = null;
+      async function check() {
+        const r = await fetch('/api/criteria', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text: ta.value, check: true }),
+        });
+        showValid(await r.json());
+      }
+      ta.addEventListener('input', () => {
+        clearTimeout(checkTimer);
+        checkTimer = setTimeout(check, 500);
+      });
+
+      document.getElementById('save').addEventListener('click', async () => {
+        const r = await fetch('/api/criteria', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text: ta.value }),
+        });
+        const v = await r.json();
+        showValid(v);
+        if (v.ok) load();
+      });
+
+      // --- zmiana przez agenta (strumień jak w czacie) ---
+      document.getElementById('ask').addEventListener('click', async () => {
+        const instr = document.getElementById('instr').value.trim();
+        if (!instr) return;
+        const out = document.getElementById('agent-out');
+        out.hidden = false;
+        out.textContent = '';
+        const btn = document.getElementById('ask');
+        btn.disabled = true;
+
+        try {
+          const res = await fetch('/api/criteria/agent', {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ instruction: instr }),
+          });
+          if (!res.body) throw new Error('brak strumienia');
+          const reader = res.body.getReader();
+          const dec = new TextDecoder();
+          let buf = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            const parts = buf.split('\n\n');
+            buf = parts.pop() || '';
+            for (const p of parts) {
+              const line = p.trim();
+              if (!line.startsWith('data:')) continue;
+              let e; try { e = JSON.parse(line.slice(5).trim()); } catch { continue; }
+              if (e.type === 'text') out.textContent += e.text;
+              else if (e.type === 'tool') out.textContent += '\n🔧 ' + e.name + (e.info ? ' · ' + e.info : '') + '\n';
+              else if (e.type === 'limit') out.textContent += '\n⏳ ' + e.text + '\n';
+              else if (e.type === 'done' && !e.ok) out.textContent += '\n⚠ ' + (e.error || 'błąd') + '\n';
+              out.scrollTop = out.scrollHeight;
+            }
+          }
+          document.getElementById('instr').value = '';
+          await load();   // agent zmienił plik — pokaż aktualną treść
+        } catch (err) {
+          out.textContent += '\n⚠ ' + err.message;
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+      load();
+    </script>
+  </Fragment>
+</Base>
