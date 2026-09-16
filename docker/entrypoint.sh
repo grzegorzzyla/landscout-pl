@@ -43,6 +43,33 @@ fi
 mkdir -p "$HOME_DIR/.claude" 2>/dev/null || true
 chown "$RUN_AS" "$HOME_DIR" "$HOME_DIR/.claude" 2>/dev/null || true
 
+# --- zaufanie do katalogu projektu -------------------------------------------------
+# Bez tego Claude Code ignoruje permissions.allow z .claude/settings.json ("this workspace has
+# not been trusted") i wypisuje ostrzeżenie przy każdym uruchomieniu. Interaktywnego dialogu
+# w kontenerze nie ma kto kliknąć, więc ustawiamy flagę wprost — scalając z istniejącym plikiem,
+# żeby nie skasować historii ani innych ustawień.
+CFG_DIR="${CLAUDE_CONFIG_DIR:-$HOME_DIR/.claude}"
+CFG_JSON="$CFG_DIR/.claude.json"
+mkdir -p "$CFG_DIR" 2>/dev/null || true
+python3 - "$CFG_JSON" "${ASSISTANT_DIR:-/app}" <<'PYEOF' 2>/dev/null || true
+import json, os, sys
+path, project = sys.argv[1], sys.argv[2]
+data = {}
+if os.path.exists(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh) or {}
+    except Exception:
+        data = {}
+projects = data.setdefault("projects", {})
+entry = projects.setdefault(project, {})
+if not entry.get("hasTrustDialogAccepted"):
+    entry["hasTrustDialogAccepted"] = True
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=1)
+PYEOF
+chown -R "$RUN_AS" "$CFG_DIR" 2>/dev/null || true
+
 # --- zdjęcia ------------------------------------------------------------------------
 # Strona serwuje statyki z dist/client, a zdjęcia leżą na wolumenie. Dowiązanie musi powstać
 # PO zbudowaniu obrazu, bo w czasie budowania wolumenu jeszcze nie ma.

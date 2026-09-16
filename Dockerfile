@@ -19,7 +19,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # przeglądarki Playwrighta poza $HOME roota — inaczej użytkownik nie-root ich nie znajdzie
     PLAYWRIGHT_BROWSERS_PATH=/opt/playwright \
     VIRTUAL_ENV=/opt/venv \
-    HOME=/home/landscout
+    HOME=/home/landscout \
+    # Claude Code ustala katalog konfiguracji z wpisu w passwd (dla UID 1000 to `node` z obrazu
+    # bazowego), a NIE ze zmiennej HOME — sesje lądowałyby w /home/node/.claude, czyli poza
+    # wolumenem, i ginęły przy każdym odtworzeniu kontenera. Wskazujemy katalog wprost.
+    CLAUDE_CONFIG_DIR=/home/landscout/.claude
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 python3-venv ca-certificates git gosu tini tzdata \

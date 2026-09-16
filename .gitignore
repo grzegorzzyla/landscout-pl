@@ -1,6 +1,9 @@
 # --- sekrety / lokalna konfiguracja (NIGDY do repo) ---
 site/.env
 **/.env
+# Kopie konfiguracji do wgrania w Portainerze — zawierają hasło, sekret sesji i tokeny.
+*.env
+!.env.example
 .claude/settings.local.json
 
 # --- dane prywatne użytkownika (baza ofert, zdjęcia, konfiguracja) ---
