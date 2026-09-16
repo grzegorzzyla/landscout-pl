@@ -114,19 +114,24 @@ do `.env`, uzupełnij i w Portainerze użyj *Environment variables → **Load va
 Po starcie kontenera Tailscale **zatwierdź trasę** w panelu (Machines → … → Edit route
 settings) — dopiero wtedy cała sieć domowa jest widoczna z tailnetu.
 
-### 3. Logowanie Claude Code (raz)
+### 3. Autoryzacja Claude Code
 
-Agentura działa na Twojej subskrypcji. Poświadczenia trafiają na wolumen `claude-home`,
-więc logujesz się **jeden raz** — przebudowa obrazu ich nie kasuje.
-
-W Portainerze: *Containers → landscout → Console* (`/bin/bash`, jako `landscout`), a tam:
+Agentura (ingest, ocena, deep-dive) działa na Twojej subskrypcji. Kontener nie ma przeglądarki,
+więc logowanie OAuth w środku jest niewygodne — zwłaszcza przy logowaniu przez Google.
+Prostsza droga: **wygeneruj token na swoim komputerze**, tam gdzie jesteś już zalogowany.
 
 ```bash
-claude            # otwiera logowanie; postępuj wg instrukcji na ekranie
+claude setup-token          # na laptopie, nie w kontenerze
 ```
 
-Log kontenera sam ostrzega, gdy logowania brakuje (`UWAGA: brak logowania Claude Code`).
-Gdy sesja kiedyś wygaśnie — powtórz to samo.
+Wynik wklej do `.env` jako `CLAUDE_CODE_OAUTH_TOKEN`. Kontener działa wtedy od pierwszego startu,
+bez wchodzenia do konsoli.
+
+Alternatywa (gdy wolisz nie trzymać tokenu w pliku): zostaw zmienną pustą i zaloguj się raz
+w konsoli kontenera — *Containers → landscout → Console* — poleceniem `claude auth login`.
+Poświadczenia trafią na wolumen `claude-home`, więc przebudowa obrazu ich nie skasuje.
+
+Log kontenera przy starcie mówi wprost, którym trybem poszedł, i ostrzega, gdy brakuje obu.
 
 ### 4. Co gdzie trafia
 

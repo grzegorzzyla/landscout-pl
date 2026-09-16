@@ -43,8 +43,14 @@ fi
 echo "[landscout] ofert w bazie: $(ls -1 "$DATA_DIR/listings"/*.md 2>/dev/null | wc -l | tr -d ' ')"
 if command -v claude >/dev/null 2>&1; then
   echo "[landscout] Claude Code: $(command -v claude)"
-  if [ ! -f /home/landscout/.claude/.credentials.json ]; then
-    echo "[landscout] UWAGA: brak logowania Claude Code — otwórz konsolę kontenera i uruchom: claude"
+  if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+    echo "[landscout] Claude Code: token z CLAUDE_CODE_OAUTH_TOKEN"
+  elif [ -f /home/landscout/.claude/.credentials.json ]; then
+    echo "[landscout] Claude Code: poświadczenia z wolumenu claude-home"
+  else
+    echo "[landscout] UWAGA: brak autoryzacji Claude Code. Na swoim komputerze uruchom"
+    echo "[landscout]        \`claude setup-token\` i wstaw wynik do CLAUDE_CODE_OAUTH_TOKEN,"
+    echo "[landscout]        albo zaloguj się w konsoli kontenera: claude auth login"
   fi
 else
   echo "[landscout] UWAGA: nie znaleziono Claude Code — ingest/deep-dive/czat nie zadziałają"

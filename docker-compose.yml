@@ -24,6 +24,12 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?wygeneruj sekret sesji, np. openssl rand -hex 32}
       # nazwy hostów dopuszczone przez serwer (domena tailnetu, adres NAS-a)
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
+      # --- agentura (Claude Code) -------------------------------------------
+      # Token długoterminowy z subskrypcji: na swoim komputerze uruchom `claude setup-token`
+      # i wklej wynik do .env. Dzięki temu NIE musisz logować się wewnątrz kontenera —
+      # logowanie przez Google wymagałoby przeglądarki, której w kontenerze nie ma.
+      # Pusty = tryb interaktywny (logowanie w konsoli kontenera, poświadczenia w claude-home).
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       # --- środowisko -------------------------------------------------------
       ASSISTANT_DIR: /app
       TZ: ${TZ:-Europe/Warsaw}
