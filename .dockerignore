@@ -1,0 +1,26 @@
+# Kontekst budowania — im mniejszy, tym szybszy build i mniejszy obraz.
+
+# Dane użytkownika: montowane z NAS-a, nigdy w obrazie (to setki MB zdjęć i PII z ogłoszeń).
+properties/listings/
+properties/photos/
+properties/facebook_groups.json
+properties/criteria.md.bak-*
+
+# Zależności i artefakty — instalowane/budowane w obrazie od zera.
+node_modules/
+site/node_modules/
+site/dist/
+site/public/photos
+**/__pycache__/
+scripts/.cache/
+scripts/.fb_profile*/
+
+# Sekrety i lokalna konfiguracja.
+.env
+site/.env
+*.log
+
+# Historia i narzędzia, niepotrzebne w runtime.
+.git/
+.github/
+docs/screenshots/

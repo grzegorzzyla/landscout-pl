@@ -1,0 +1,62 @@
+# LandScout PL na NAS — dwa kontenery, jeden compose.
+#
+#   landscout  — strona + agentura (Claude Code, scrapery, Playwright)
+#   tailscale  — subnet router: daje dostęp do CAŁEJ sieci domowej z tailnetu,
+#                więc landscout nie potrzebuje własnego sidecara ani wystawiania portów na świat
+#
+# Wdrożenie w Portainerze: Stacks → Add stack → Repository → adres tego repo, gałąź main.
+# Zmienne (TS_AUTHKEY, ACCESS_PASSWORD, SESSION_SECRET) wpisz w Portainerze w sekcji Environment
+# ALBO w pliku .env obok compose — nigdy w tym pliku, bo trafia do repozytorium.
+
+services:
+  landscout:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: landscout-pl:local
+    container_name: landscout
+    restart: unless-stopped
+    ports:
+      - "4321:4321"
+    environment:
+      # --- dostęp do strony -------------------------------------------------
+      ACCESS_PASSWORD: ${ACCESS_PASSWORD:?ustaw hasło dostępu do strony}
+      SESSION_SECRET: ${SESSION_SECRET:?wygeneruj sekret sesji, np. openssl rand -hex 32}
+      # nazwy hostów dopuszczone przez serwer (domena tailnetu, adres NAS-a)
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
+      # --- środowisko -------------------------------------------------------
+      ASSISTANT_DIR: /app
+      TZ: ${TZ:-Europe/Warsaw}
+      # dopasuj do właściciela katalogu danych na NAS-ie (id -u / id -g)
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    volumes:
+      # Dane = jedyne źródło prawdy. Trzymane POZA kontenerem, żeby przeżyły każdą przebudowę.
+      - ${DATA_ROOT:-/volume1/docker/landscout}/properties:/app/properties
+      # Poświadczenia Claude Code + historia rozmów. Bez tego wolumenu każde odtworzenie
+      # kontenera = ponowne logowanie i utrata historii czatu.
+      - ${DATA_ROOT:-/volume1/docker/landscout}/claude-home:/home/landscout/.claude
+      # Cache KOWR i trwały profil przeglądarki dla skanera Facebooka (sesja logowania).
+      - ${DATA_ROOT:-/volume1/docker/landscout}/cache:/app/scripts/.cache
+      - ${DATA_ROOT:-/volume1/docker/landscout}/fb-profile:/app/scripts/.fb_profile
+    # Chromium potrzebuje większego /dev/shm, inaczej wywraca się przy cięższych stronach.
+    shm_size: 1gb
+
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: landscout-tailscale
+    hostname: ${TS_HOSTNAME:-nas-landscout}
+    restart: unless-stopped
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:?wygeneruj klucz w panelu Tailscale (Settings → Keys)}
+      TS_STATE_DIR: /var/lib/tailscale
+      # Subnet router: udostępnia w tailnecie całą sieć LAN, nie tylko ten kontener.
+      # Trasę trzeba JESZCZE zatwierdzić w panelu Tailscale (Machines → ... → Edit route settings).
+      TS_ROUTES: ${TS_ROUTES:?podaj podsieć LAN, np. 192.168.2.0/24}
+      TS_EXTRA_ARGS: ${TS_EXTRA_ARGS:---accept-dns=false}
+    volumes:
+      - ${DATA_ROOT:-/volume1/docker/landscout}/tailscale:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW

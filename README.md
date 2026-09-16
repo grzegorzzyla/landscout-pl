@@ -71,6 +71,70 @@ Ocena LLM czyta pełny opis każdego ogłoszenia i punktuje właśnie względem 
 
 ![Ocena dopasowania i historia oferty](docs/screenshots/analiza.png)
 
+## Uruchomienie na NAS (Docker)
+
+Cały system — strona i agentura (Claude Code, scrapery, Playwright) — mieści się w jednym
+kontenerze. Dane leżą **poza** nim, na zamontowanym katalogu NAS-a, więc przebudowa obrazu
+nigdy ich nie rusza.
+
+### 1. Katalogi na NAS
+
+```bash
+mkdir -p /volume1/docker/landscout/{properties,claude-home,cache,fb-profile,tailscale}
+id                     # zapisz UID i GID — trafią do PUID/PGID
+```
+
+Dane z instalacji lokalnej przenosisz zwykłym kopiowaniem — nie ma bazy do migracji:
+
+```bash
+rsync -a properties/listings properties/photos properties/criteria.md \
+      nas:/volume1/docker/landscout/properties/
+```
+
+### 2. Stack w Portainerze
+
+*Stacks → Add stack → Repository*, adres tego repozytorium, gałąź `main`, plik
+`docker-compose.yml`. Obraz buduje się na NAS-ie — **żaden rejestr Dockera nie jest potrzebny**.
+Aktualizacja po commicie to „Pull and redeploy".
+
+W sekcji *Environment* ustaw:
+
+| zmienna | znaczenie |
+|---|---|
+| `DATA_ROOT` | `/volume1/docker/landscout` |
+| `ACCESS_PASSWORD` | hasło do strony |
+| `SESSION_SECRET` | `openssl rand -hex 32` |
+| `PUID` / `PGID` | z polecenia `id` |
+| `ALLOWED_HOSTS` | domena tailnetu, np. `.tail1234.ts.net` |
+| `TS_AUTHKEY` | klucz z panelu Tailscale (Settings → Keys) |
+| `TS_ROUTES` | podsieć LAN, np. `192.168.2.0/24` |
+
+Po starcie kontenera Tailscale **zatwierdź trasę** w panelu (Machines → … → Edit route
+settings) — dopiero wtedy cała sieć domowa jest widoczna z tailnetu.
+
+### 3. Logowanie Claude Code (raz)
+
+Agentura działa na Twojej subskrypcji. Poświadczenia trafiają na wolumen `claude-home`,
+więc logujesz się **jeden raz** — przebudowa obrazu ich nie kasuje.
+
+W Portainerze: *Containers → landscout → Console* (`/bin/bash`, jako `landscout`), a tam:
+
+```bash
+claude            # otwiera logowanie; postępuj wg instrukcji na ekranie
+```
+
+Log kontenera sam ostrzega, gdy logowania brakuje (`UWAGA: brak logowania Claude Code`).
+Gdy sesja kiedyś wygaśnie — powtórz to samo.
+
+### 4. Co gdzie trafia
+
+| ścieżka na NAS | co zawiera | dlaczego poza obrazem |
+|---|---|---|
+| `properties/` | oferty `.md`, zdjęcia, `criteria.md` | jedyne źródło prawdy; setki MB i dane z ogłoszeń |
+| `claude-home/` | poświadczenia Claude + historia czatu | inaczej każda przebudowa = ponowne logowanie |
+| `cache/` | cache KOWR | oszczędza pełne przejście zasobu |
+| `fb-profile/` | sesja przeglądarki dla grup FB | logowanie do Facebooka przeżywa restart |
+
 ## Konfiguracja adresowo.pl
 
 Adresowo to jedyne ze źródeł, które trzeba (opcjonalnie) skonfigurować — bo pozwala wyszukiwać po
