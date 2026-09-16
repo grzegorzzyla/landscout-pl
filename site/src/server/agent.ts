@@ -25,6 +25,16 @@ function check(name: string, fn: () => string): Check {
 export function collectStatus(): { checks: Check[]; authSource: string } {
   const checks: Check[] = [];
 
+  // Kiedy zbudowano obraz. Bierzemy datę pliku wyjściowego builda, bo `.git` jest wyłączony
+  // z kontekstu budowania, a `RUN date > plik` w Dockerfile byłby CACHE'OWANY i zamrażał
+  // jedną datę na zawsze. Odpowiada na pytanie "czy patrzę na nowy kod?", które dziś wracało
+  // kilkukrotnie przy każdej przebudowie.
+  checks.push(check('Wersja obrazu', () => {
+    const entry = join(PROJECT_DIR, 'site', 'dist', 'server', 'entry.mjs');
+    if (!existsSync(entry)) return 'nie znaleziono artefaktu builda';
+    return `zbudowany ${statSync(entry).mtime.toLocaleString('pl-PL')}`;
+  }));
+
   checks.push(check('Claude Code', () => {
     const exe = resolveClaudeExeCached();
     const v = execFileSync(exe, ['--version'], { encoding: 'utf-8', timeout: 20000 }).trim();
