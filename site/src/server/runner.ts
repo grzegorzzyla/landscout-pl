@@ -63,6 +63,14 @@ function resolveViaCdp(): string | null {
   }
 }
 
+// Cache: rozwiązywanie ścieżki woła `cdp --which` (podproces), a czat potrzebuje jej przy
+// każdej turze rozmowy.
+let _claudeExe: string | null = null;
+export function resolveClaudeExeCached(): string {
+  if (!_claudeExe) _claudeExe = resolveClaudeExe();
+  return _claudeExe;
+}
+
 function resolveClaudeExe(): string {
   if (process.env.CLAUDE_EXE && existsSync(process.env.CLAUDE_EXE)) return process.env.CLAUDE_EXE;
   const viaCdp = resolveViaCdp();

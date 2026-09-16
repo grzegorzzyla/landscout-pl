@@ -1,0 +1,148 @@
+---
+export const prerender = false;
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Czat z agenturą">
+  <header>
+    <a class="iconbtn" href="/" aria-label="Powrót do listy">←</a>
+    <h1>💬 Czat z agenturą</h1>
+    <span class="muted" id="chat-state">nowa rozmowa</span>
+    <button class="btn ghost" id="chat-new" type="button">Nowa rozmowa</button>
+  </header>
+
+  <main class="chat-main">
+    <div id="chat-log" class="chat-log">
+      <div class="msg assistant">
+        <p>Cześć. Mam dostęp do Twoich kryteriów, bazy ofert i skili wyszukiwania.</p>
+        <p class="muted">Na przykład:</p>
+        <ul class="muted">
+          <li>„pokaż 5 najtańszych ofert za m² wśród obserwowanych"</li>
+          <li>„zrób deep-dive dla Lubienia i powiedz, czy warto"</li>
+          <li>„poszukaj w gminie Ręczno do 4 zł/m²"</li>
+          <li>„czemu odrzuciłeś ofertę 20260915_402?"</li>
+        </ul>
+      </div>
+    </div>
+
+    <form id="chat-form" class="chat-form">
+      <textarea id="chat-input" rows="2" placeholder="Napisz wiadomość… (Enter wysyła, Shift+Enter nowa linia)"></textarea>
+      <button class="btn" id="chat-send" type="submit">Wyślij</button>
+    </form>
+  </main>
+
+  <Fragment slot="scripts">
+    <script is:inline>
+      const log = document.getElementById('chat-log');
+      const form = document.getElementById('chat-form');
+      const input = document.getElementById('chat-input');
+      const sendBtn = document.getElementById('chat-send');
+      const state = document.getElementById('chat-state');
+
+      // Identyfikator rozmowy trzyma Claude Code; my pamiętamy go tylko po to, żeby kolejna
+      // wiadomość trafiła do tej samej sesji (i przeżyła odświeżenie strony).
+      const KEY = 'landscout-chat-session';
+      let sessionId = localStorage.getItem(KEY) || null;
+      if (sessionId) state.textContent = 'rozmowa wznowiona';
+
+      document.getElementById('chat-new').addEventListener('click', () => {
+        localStorage.removeItem(KEY);
+        sessionId = null;
+        state.textContent = 'nowa rozmowa';
+        log.querySelectorAll('.msg:not(:first-child)').forEach((n) => n.remove());
+      });
+
+      function addMsg(cls, text) {
+        const d = document.createElement('div');
+        d.className = 'msg ' + cls;
+        d.textContent = text || '';
+        log.appendChild(d);
+        log.scrollTop = log.scrollHeight;
+        return d;
+      }
+
+      function addTool(name, info) {
+        const d = document.createElement('div');
+        d.className = 'msg tool';
+        d.textContent = '🔧 ' + name + (info ? ' · ' + info : '');
+        log.appendChild(d);
+        log.scrollTop = log.scrollHeight;
+      }
+
+      let busy = false;
+
+      async function send(text) {
+        if (busy || !text.trim()) return;
+        busy = true;
+        sendBtn.disabled = true;
+        addMsg('user', text);
+        input.value = '';
+
+        const bubble = addMsg('assistant streaming', '');
+        const cursor = document.createElement('span');
+        cursor.className = 'cursor';
+        bubble.appendChild(cursor);
+
+        try {
+          const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ message: text, sessionId }),
+          });
+          if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
+
+          const reader = res.body.getReader();
+          const dec = new TextDecoder();
+          let buf = '';
+          let acc = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            const parts = buf.split('\n\n');
+            buf = parts.pop() || '';
+            for (const part of parts) {
+              const line = part.trim();
+              if (!line.startsWith('data:')) continue;
+              let e;
+              try { e = JSON.parse(line.slice(5).trim()); } catch { continue; }
+
+              if (e.type === 'session') {
+                sessionId = e.sessionId;
+                localStorage.setItem(KEY, sessionId);
+                state.textContent = 'rozmowa aktywna';
+              } else if (e.type === 'text') {
+                acc += e.text;
+                bubble.textContent = acc;
+                bubble.appendChild(cursor);
+                log.scrollTop = log.scrollHeight;
+              } else if (e.type === 'tool') {
+                addTool(e.name, e.info);
+              } else if (e.type === 'limit') {
+                addMsg('limit', '⏳ ' + e.text);
+              } else if (e.type === 'done') {
+                if (!e.ok) addMsg('error', '⚠ ' + (e.error || 'Zadanie nie powiodło się'));
+              }
+            }
+          }
+          if (!acc) bubble.textContent = '(brak odpowiedzi tekstowej — zobacz wykonane narzędzia powyżej)';
+        } catch (err) {
+          addMsg('error', '⚠ Połączenie przerwane: ' + (err && err.message ? err.message : err));
+        } finally {
+          cursor.remove();
+          bubble.classList.remove('streaming');
+          busy = false;
+          sendBtn.disabled = false;
+          input.focus();
+        }
+      }
+
+      form.addEventListener('submit', (e) => { e.preventDefault(); send(input.value); });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input.value); }
+      });
+      input.focus();
+    </script>
+  </Fragment>
+</Base>
