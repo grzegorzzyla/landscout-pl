@@ -44,6 +44,16 @@ export function runChatTurn(
   isFirstTurn: boolean,
   onEvent: (e: ChatEvent) => void,
 ): Promise<void> {
+  return runTurn(message, sessionId, isFirstTurn, onEvent, true);
+}
+
+function runTurn(
+  message: string,
+  sessionId: string,
+  isFirstTurn: boolean,
+  onEvent: (e: ChatEvent) => void,
+  mayRetry: boolean,
+): Promise<void> {
   return new Promise((resolve) => {
     let exe: string;
     try {
@@ -103,16 +113,30 @@ export function runChatTurn(
       resolve();
     });
 
-    child.on('close', (code) => {
+    child.on('close', async (code) => {
       if (code === 0) {
         onEvent({ type: 'done', ok: true });
-      } else {
-        onEvent({
-          type: 'done',
-          ok: false,
-          error: sawError.trim().split('\n').slice(-3).join(' ') || `Claude Code zakończył się kodem ${code}`,
-        });
+        return resolve();
       }
+
+      // Wznowienie nieistniejącej sesji to sytuacja NAPRAWIALNA, nie błąd do pokazania:
+      // zdarza się, gdy pierwsza tura padła (np. w trakcie przebudowy kontenera), a przeglądarka
+      // zdążyła zapamiętać identyfikator. Bez tego każda kolejna wiadomość padałaby w nieskończoność.
+      const looksLikeMissingSession = /no conversation|session.*(not found|does not exist)|resume/i
+        .test(sawError);
+      if (!isFirstTurn && mayRetry && looksLikeMissingSession) {
+        const fresh = newSessionId();
+        onEvent({ type: 'session', sessionId: fresh });
+        console.error('[czat] wznowienie nieudane — zaczynam nową sesję');
+        await runTurn(message, fresh, true, onEvent, false);
+        return resolve();
+      }
+
+      onEvent({
+        type: 'done',
+        ok: false,
+        error: sawError.trim().split('\n').slice(-3).join(' ') || `Claude Code zakończył się kodem ${code}`,
+      });
       resolve();
     });
   });

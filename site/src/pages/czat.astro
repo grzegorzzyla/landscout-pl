@@ -109,8 +109,9 @@ import Base from '../layouts/Base.astro';
               try { e = JSON.parse(line.slice(5).trim()); } catch { continue; }
 
               if (e.type === 'session') {
+                // Zapamiętujemy w pamięci, ale do localStorage dopiero po UDANEJ turze —
+                // zapisany identyfikator martwej sesji psuje rozmowę na stałe.
                 sessionId = e.sessionId;
-                localStorage.setItem(KEY, sessionId);
                 state.textContent = 'rozmowa aktywna';
               } else if (e.type === 'text') {
                 acc += e.text;
@@ -122,7 +123,14 @@ import Base from '../layouts/Base.astro';
               } else if (e.type === 'limit') {
                 addMsg('limit', '⏳ ' + e.text);
               } else if (e.type === 'done') {
-                if (!e.ok) addMsg('error', '⚠ ' + (e.error || 'Zadanie nie powiodło się'));
+                if (e.ok) {
+                  if (sessionId) localStorage.setItem(KEY, sessionId);
+                } else {
+                  addMsg('error', '⚠ ' + (e.error || 'Zadanie nie powiodło się'));
+                  localStorage.removeItem(KEY);   // nie ciągnijmy zepsutej sesji dalej
+                  sessionId = null;
+                  state.textContent = 'nowa rozmowa';
+                }
               }
             }
           }

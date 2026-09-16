@@ -34,9 +34,11 @@ export const POST: APIRoute = async ({ request }) => {
           /* klient się rozłączył */
         }
       };
-      // Identyfikator sesji leci PIERWSZY, żeby przeglądarka mogła go zapamiętać nawet wtedy,
-      // gdy tura zakończy się błędem — inaczej kolejna wiadomość zaczynałaby rozmowę od zera.
-      send({ type: 'session', sessionId });
+      // Identyfikatora NIE wysyłamy z góry. Wcześniejsza wersja tak robiła i to był błąd:
+      // gdy pierwsza tura padła, przeglądarka zapamiętywała sesję, która nigdy nie powstała,
+      // a każda następna wiadomość szła z --resume na nieistniejący identyfikator i padała
+      // w nieskończoność. Teraz identyfikator potwierdza dopiero sam Claude Code (zdarzenie
+      // "system" ze stream-json) albo ponowienie po nieudanym wznowieniu.
       await runChatTurn(message, sessionId, isFirstTurn, send);
       try {
         controller.close();
