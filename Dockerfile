@@ -72,8 +72,13 @@ RUN test -f /app/site/dist/server/entry.mjs || { \
 # ustawiałby właściciela na UID przydzielony przy budowaniu (1001, bo 1000 zajmuje użytkownik
 # `node` z obrazu bazowego), a po starcie proces ma już inny UID — pliki zostawałyby u
 # osieroconego właściciela. Same prawa odczytu wystarczą i nie zależą od numerów.
+# `COPY . .` przenosi prawa Z KONTEKSTU BUDOWANIA. Portainer klonuje repozytorium z
+# restrykcyjnym umaskiem, więc katalogi trafiają do obrazu jako 0700 — a proces działa jako
+# PUID:PGID, nie root, i nie przejdzie nawet przez /app/site do gotowej strony (objawia się
+# jako "Cannot find module", choć plik istnieje i sam w sobie jest czytelny).
+# Dlatego nadajemy prawa odczytu na CAŁYM drzewie aplikacji, nie na wybranych podkatalogach.
 RUN mkdir -p /home/landscout /app/properties \
-    && chmod -R a+rX /app/site/dist /app/scripts /app/bin /app/.claude 2>/dev/null || true \
+    && chmod -R a+rX /app \
     && chmod 0777 /home/landscout
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
