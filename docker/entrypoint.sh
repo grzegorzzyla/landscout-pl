@@ -1,71 +1,85 @@
 #!/usr/bin/env bash
-# Entrypoint kontenera LandScout. Robi trzy rzeczy, których nie da się załatwić w Dockerfile,
-# bo zależą od zamontowanych wolumenów (istniejących dopiero przy starcie).
+# Entrypoint kontenera LandScout. Robi rzeczy, których nie da się załatwić w Dockerfile,
+# bo zależą od wolumenów montowanych dopiero przy starcie.
+#
+# Proces uruchamiamy jako PUID:PGID NUMERYCZNIE (gosu 1000:10), bez tworzenia i przestawiania
+# użytkownika. Wcześniejsza wersja robiła useradd + usermod -u: użytkownik dostawał przy budowaniu
+# UID 1001 (1000 zajmuje `node` z obrazu bazowego), pliki chownowane na 1001, a po starcie proces
+# miał już 1000 — i tracił dostęp do własnych plików. Numery z compose omijają ten problem w całości.
 set -euo pipefail
 
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 DATA_DIR="${ASSISTANT_DIR:-/app}/properties"
+ENTRY=/app/site/dist/server/entry.mjs
+RUN_AS="${PUID}:${PGID}"
+HOME_DIR="${HOME:-/home/landscout}"
 
-# 1. Dopasowanie użytkownika do właściciela katalogu na NAS-ie. Bez tego pliki tworzone przez
-#    kontener mają obcego właściciela i nie da się ich ruszyć z poziomu systemu plików NAS-a.
-if [ "$(id -u landscout)" != "$PUID" ] || [ "$(id -g landscout)" != "$PGID" ]; then
-  groupmod -o -g "$PGID" landscout 2>/dev/null || true
-  usermod  -o -u "$PUID" -g "$PGID" landscout 2>/dev/null || true
-  chown -R "$PUID:$PGID" /home/landscout 2>/dev/null || true
-fi
-
-# 2. Struktura katalogu danych. Celowo NIE robimy chown -R na properties/ — przy kilkuset
-#    megabajtach zdjęć to wydłużałoby każdy start, a właścicielem zarządza NAS.
+# --- katalog danych ----------------------------------------------------------------
+# Bez `chown -R` na properties/: przy setkach MB zdjęć wydłużałoby każdy start, a właścicielem
+# zarządza NAS. Tworzymy tylko brakującą strukturę.
 mkdir -p "$DATA_DIR/listings/deleted" "$DATA_DIR/photos" 2>/dev/null || true
+# Katalogi tworzone tu powstają jako ROOT (entrypoint działa przed gosu), więc proces docelowy
+# nie mógłby do nich pisać. Chown TYLKO na te kilka katalogów — bez -R, żeby nie przemielać zdjęć.
+chown "$RUN_AS" "$DATA_DIR" "$DATA_DIR/listings" "$DATA_DIR/listings/deleted" \
+      "$DATA_DIR/photos" 2>/dev/null || true
 
 if [ ! -f "$DATA_DIR/criteria.md" ] && [ -f /app/properties.default/criteria.md ]; then
-  cp /app/properties.default/criteria.md "$DATA_DIR/criteria.md" || true
+  cp /app/properties.default/criteria.md "$DATA_DIR/criteria.md" 2>/dev/null || true
 fi
 
-# 3. Zdjęcia: strona serwuje statyki z dist/client, a katalog ze zdjęciami jest na wolumenie.
-#    Dowiązanie musi powstać PO zbudowaniu obrazu, bo w czasie budowania wolumenu jeszcze nie ma.
-#    (To ten sam mechanizm, co junction/symlink site/public/photos w instalacji lokalnej.)
+# --- HOME procesu -------------------------------------------------------------------
+# Claude Code trzyma tu poświadczenia, sesje i historię rozmów (.claude to osobny wolumen).
+mkdir -p "$HOME_DIR/.claude" 2>/dev/null || true
+chown "$RUN_AS" "$HOME_DIR" "$HOME_DIR/.claude" 2>/dev/null || true
+
+# --- zdjęcia ------------------------------------------------------------------------
+# Strona serwuje statyki z dist/client, a zdjęcia leżą na wolumenie. Dowiązanie musi powstać
+# PO zbudowaniu obrazu, bo w czasie budowania wolumenu jeszcze nie ma.
 CLIENT_DIR=/app/site/dist/client
 if [ -d "$CLIENT_DIR" ]; then
-  rm -rf "$CLIENT_DIR/photos"
-  ln -s "$DATA_DIR/photos" "$CLIENT_DIR/photos"
+  rm -rf "$CLIENT_DIR/photos" 2>/dev/null || true
+  ln -s "$DATA_DIR/photos" "$CLIENT_DIR/photos" 2>/dev/null || true
 fi
 
-# Diagnostyka na start — najczęstsze przyczyny „nie działa" widać od razu w logu kontenera.
-# Świadomie czytamy z `id`, a nie ze zmiennych: groupmod/usermod wyżej kończą się na `|| true`,
-# więc wypisanie PUID/PGID pokazywałoby zamiar, nie wynik — i maskowało nieudaną zmianę.
-echo "[landscout] ASSISTANT_DIR=${ASSISTANT_DIR:-/app}  uid=$(id -u landscout) gid=$(id -g landscout)"
-if [ "$(id -u landscout)" != "$PUID" ] || [ "$(id -g landscout)" != "$PGID" ]; then
-  echo "[landscout] UWAGA: nie udało się ustawić UID/GID na $PUID:$PGID — zapisy do zamontowanych"
-  echo "[landscout]        katalogów mogą padać na braku uprawnień (sprawdź: ls -ln \$DATA_ROOT)"
-fi
+# --- diagnostyka --------------------------------------------------------------------
+echo "[landscout] ASSISTANT_DIR=${ASSISTANT_DIR:-/app}  proces jako ${RUN_AS}"
 echo "[landscout] ofert w bazie: $(ls -1 "$DATA_DIR/listings"/*.md 2>/dev/null | wc -l | tr -d ' ')"
+
 if command -v claude >/dev/null 2>&1; then
-  echo "[landscout] Claude Code: $(command -v claude)"
   if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
     echo "[landscout] Claude Code: token z CLAUDE_CODE_OAUTH_TOKEN"
-  elif [ -f /home/landscout/.claude/.credentials.json ]; then
+  elif [ -f "$HOME_DIR/.claude/.credentials.json" ]; then
     echo "[landscout] Claude Code: poświadczenia z wolumenu claude-home"
   else
     echo "[landscout] UWAGA: brak autoryzacji Claude Code. Na swoim komputerze uruchom"
-    echo "[landscout]        \`claude setup-token\` i wstaw wynik do CLAUDE_CODE_OAUTH_TOKEN,"
-    echo "[landscout]        albo zaloguj się w konsoli kontenera: claude auth login"
+    echo "[landscout]        'claude setup-token' i wstaw wynik do CLAUDE_CODE_OAUTH_TOKEN,"
+    echo "[landscout]        albo zaloguj sie w konsoli kontenera: claude auth login"
   fi
 else
   echo "[landscout] UWAGA: nie znaleziono Claude Code — ingest/deep-dive/czat nie zadziałają"
 fi
 
-# Gdy brakuje artefaktu strony, `node` rzuca samo "Cannot find module" — bez informacji, co
-# faktycznie jest w obrazie. Pokazujemy stan katalogu, bo to jedyna rzecz, która tu pomaga.
-ENTRY=/app/site/dist/server/entry.mjs
-if [ ! -f "$ENTRY" ]; then
-  echo "[landscout] BŁĄD: brak $ENTRY — obraz nie zawiera zbudowanej strony."
-  echo "[landscout] --- /app/site ---"; ls -la /app/site 2>&1 | head -20
-  echo "[landscout] --- /app/site/dist ---"; ls -la /app/site/dist 2>&1 | head -20
-  echo "[landscout] Zbuduj obraz ponownie BEZ cache (w Portainerze: Pull and redeploy"
-  echo "[landscout] z zaznaczonym 'Re-pull image' / opcją --no-cache)."
+# Dostępność pliku sprawdzamy OCZAMI PROCESU DOCELOWEGO, nie roota — to jest ta różnica, przez
+# którą poprzednia wersja przechodziła kontrolę, a `node` i tak zgłaszał "Cannot find module":
+# root widział plik, użytkownik docelowy już nie.
+if ! gosu "$RUN_AS" test -r "$ENTRY" 2>/dev/null; then
+  echo "[landscout] BŁĄD: uzytkownik ${RUN_AS} nie moze odczytac $ENTRY"
+  echo "[landscout] --- plik widziany przez roota ---"
+  ls -la "$ENTRY" 2>&1 | head -3
+  echo "[landscout] --- /app/site ---";        ls -la /app/site 2>&1 | head -15
+  echo "[landscout] --- /app/site/dist ---";   ls -la /app/site/dist 2>&1 | head -15
+  echo "[landscout] --- prawa wzdluz sciezki ---"; namei -l "$ENTRY" 2>&1 | head -12
   exit 1
 fi
 
-exec gosu landscout "$@"
+# LANDSCOUT_DEBUG=1 → wypisz stan przed startem. Przydatne, gdy kontener wpada w petle restartow
+# i nie da sie do niego podlaczyc konsola.
+if [ "${LANDSCOUT_DEBUG:-}" = "1" ]; then
+  echo "[landscout][debug] --- /app/site/dist/server ---"; ls -la /app/site/dist/server 2>&1 | head -12
+  echo "[landscout][debug] --- /app/properties ---";       ls -la "$DATA_DIR" 2>&1 | head -12
+  echo "[landscout][debug] --- node ---";                  gosu "$RUN_AS" node --version 2>&1
+  echo "[landscout][debug] --- python ---";                gosu "$RUN_AS" python3 -c "import yaml,httpx;print('yaml+httpx OK')" 2>&1
+fi
+
+exec gosu "$RUN_AS" "$@"

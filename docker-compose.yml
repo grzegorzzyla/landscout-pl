@@ -40,6 +40,9 @@ services:
       # dopasuj do właściciela katalogu danych na NAS-ie (id -u / id -g)
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
+      # LANDSCOUT_DEBUG=1 → entrypoint wypisze stan katalogów i wersje narzędzi przed startem.
+      # Przydatne, gdy kontener wpada w pętlę restartów i nie da się wejść konsolą.
+      LANDSCOUT_DEBUG: ${LANDSCOUT_DEBUG:-}
     volumes:
       # Dane = jedyne źródło prawdy. Trzymane POZA kontenerem, żeby przeżyły każdą przebudowę.
       - ${DATA_ROOT:-/volume1/docker/landscout}/properties:/app/properties

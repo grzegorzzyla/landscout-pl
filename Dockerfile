@@ -67,10 +67,14 @@ RUN test -f /app/site/dist/server/entry.mjs || { \
       echo "--- /app/site/dist ---"; ls -laR /app/site/dist 2>/dev/null | head -40; \
       exit 1; }
 
-# Użytkownik nie-root; PUID/PGID dopasujesz w compose do właściciela katalogu na NAS-ie.
-RUN useradd --create-home --home-dir /home/landscout --shell /bin/bash landscout \
-    && mkdir -p /home/landscout/.claude /app/properties \
-    && chown -R landscout:landscout /home/landscout /app/site/dist
+# Kod aplikacji ma być czytelny dla DOWOLNEGO UID-u, bo proces uruchamiamy jako PUID:PGID
+# podane w compose (numerycznie, przez gosu). Świadomie NIE robimy `chown` na katalogu z kodem:
+# ustawiałby właściciela na UID przydzielony przy budowaniu (1001, bo 1000 zajmuje użytkownik
+# `node` z obrazu bazowego), a po starcie proces ma już inny UID — pliki zostawałyby u
+# osieroconego właściciela. Same prawa odczytu wystarczą i nie zależą od numerów.
+RUN mkdir -p /home/landscout /app/properties \
+    && chmod -R a+rX /app/site/dist /app/scripts /app/bin /app/.claude 2>/dev/null || true \
+    && chmod 0777 /home/landscout
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh /app/bin/cdp || true
