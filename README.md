@@ -107,7 +107,7 @@ do `.env`, uzupełnij i w Portainerze użyj *Environment variables → **Load va
 | `PUID` / `PGID` | właściciel tego katalogu — sprawdź poleceniem `id` |
 | `ACCESS_PASSWORD` | hasło do bramki strony |
 | `SESSION_SECRET` | `openssl rand -hex 32` |
-| `ALLOWED_HOSTS` | domena tailnetu, np. `.tail1234.ts.net` |
+| `ALLOWED_HOSTS` | **tylko dla serwera deweloperskiego** na własnym komputerze; w kontenerze bez znaczenia (zbudowany serwer nie sprawdza nagłówka `Host`) |
 | `TS_AUTHKEY` | klucz z panelu Tailscale (Settings → Keys), najlepiej *reusable* |
 | `TS_ROUTES` | podsieć LAN, np. `192.168.2.0/24` |
 
