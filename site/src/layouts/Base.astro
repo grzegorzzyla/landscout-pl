@@ -81,6 +81,9 @@ const { title = 'Działki' } = Astro.props;
       .check.bad strong { color: var(--bad); }
       .check span { color: var(--muted); font-family: ui-monospace, monospace; font-size:12px;
         word-break: break-word; }
+      .joblog { max-height: 420px; overflow:auto; background:#0a0c10; border:1px solid var(--border);
+        border-radius:8px; padding:10px; font-size:12px; font-family: ui-monospace, monospace;
+        white-space: pre-wrap; word-break: break-word; }
       /* --- czat z agenturą --- */
       .chat-main { max-width: 900px; margin: 0 auto; padding: 12px 16px 0; display:flex;
         flex-direction:column; height: calc(100dvh - var(--header-h, 56px)); }

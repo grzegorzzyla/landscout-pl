@@ -20,6 +20,31 @@ import Base from '../layouts/Base.astro';
     </section>
 
     <section class="panel">
+      <h3>Kolejka zadań</h3>
+      <p class="muted">
+        Zadanie czeka na swój termin i wykonuje się <strong>pojedynczo</strong> — agentura jest
+        ciężka, więc dwa naraz tylko by sobie przeszkadzały. Nocny termin ma sens praktyczny:
+        ocena ofert zużywa najwięcej tokenów, a limit dzielisz z sesjami w edytorze.
+      </p>
+      <div class="row" style="gap:8px; align-items:stretch; flex-wrap:wrap;">
+        <select id="q-kind" style="flex:0 0 auto;">
+          <option value="search">🔎 Odśwież wg kryteriów</option>
+          <option value="fb-scan">📘 Skanuj grupy FB</option>
+        </select>
+        <input id="q-note" placeholder="uwagi, np. „tylko Podlasie, do 4 zł/m²" (opcjonalnie)" style="flex:1; min-width:220px;" />
+        <button class="btn" id="q-night" type="button">Zleć na noc</button>
+        <button class="btn ghost" id="q-now" type="button">Uruchom teraz</button>
+      </div>
+      <p class="muted" id="q-msg" hidden></p>
+      <div id="q-list" class="checks" style="margin-top:10px;"></div>
+    </section>
+
+    <section class="panel" id="log-panel" hidden>
+      <h3>Dziennik zadania <button class="btn ghost" id="log-close" type="button">zamknij</button></h3>
+      <pre id="log-text" class="joblog"></pre>
+    </section>
+
+    <section class="panel">
       <h3>Token Claude Code</h3>
       <p class="muted">
         Agentura działa na Twojej subskrypcji. Gdy token wygaśnie, wygeneruj nowy na swoim
@@ -103,6 +128,96 @@ import Base from '../layouts/Base.astro';
         load();
       });
 
+      // --- kolejka ---------------------------------------------------------
+      const qMsg = document.getElementById('q-msg');
+      const qList = document.getElementById('q-list');
+
+      const fmt = (ts) => ts ? new Date(ts).toLocaleString('pl-PL', { dateStyle:'short', timeStyle:'short' }) : '—';
+      const LABEL = { queued:'⏳ w kolejce', running:'▶ wykonuje się', done:'✓ gotowe',
+                      error:'✗ błąd', cancelled:'⊘ anulowane' };
+
+      async function loadQueue() {
+        try {
+          const r = await fetch('/api/queue');
+          const d = await r.json();
+          qList.innerHTML = '';
+          if (!d.tasks.length) {
+            qList.innerHTML = '<p class="muted">Kolejka pusta.</p>';
+          }
+          for (const t of d.tasks) {
+            const row = document.createElement('div');
+            row.className = 'check ' + (t.status === 'error' ? 'bad' : t.status === 'done' ? 'ok' : '');
+            const head = document.createElement('strong');
+            head.textContent = LABEL[t.status] + ' · ' +
+              (t.kind === 'search' ? 'wyszukiwanie' : 'skan FB') +
+              (t.note ? ' · „' + t.note + '"' : '');
+            const det = document.createElement('span');
+            det.textContent = (t.status === 'queued' ? 'start: ' + fmt(t.runAt)
+                              : 'start: ' + fmt(t.startedAt) + (t.finishedAt ? ' · koniec: ' + fmt(t.finishedAt) : ''))
+                              + (t.summary ? ' · ' + t.summary : '')
+                              + (t.error ? ' · ' + t.error : '');
+            row.appendChild(head); row.appendChild(det);
+
+            const actions = document.createElement('div');
+            actions.style.marginTop = '4px';
+            const logBtn = document.createElement('button');
+            logBtn.className = 'btn ghost'; logBtn.type = 'button'; logBtn.textContent = 'dziennik';
+            logBtn.addEventListener('click', () => showLog(t.id));
+            actions.appendChild(logBtn);
+            if (t.status === 'queued') {
+              const cancelBtn = document.createElement('button');
+              cancelBtn.className = 'btn ghost'; cancelBtn.type = 'button'; cancelBtn.textContent = 'anuluj';
+              cancelBtn.style.marginLeft = '6px';
+              cancelBtn.addEventListener('click', async () => {
+                await fetch('/api/queue', { method:'POST', headers:{'content-type':'application/json'},
+                  body: JSON.stringify({ cancelId: t.id }) });
+                loadQueue();
+              });
+              actions.appendChild(cancelBtn);
+            }
+            row.appendChild(actions);
+            qList.appendChild(row);
+          }
+        } catch (e) {
+          qList.innerHTML = '<p class="muted">Nie udało się pobrać kolejki: ' + e.message + '</p>';
+        }
+      }
+
+      async function showLog(id) {
+        const panel = document.getElementById('log-panel');
+        const pre = document.getElementById('log-text');
+        panel.hidden = false;
+        pre.textContent = 'wczytywanie…';
+        const r = await fetch('/api/queue/log?id=' + encodeURIComponent(id));
+        const d = await r.json();
+        pre.textContent = d.ok ? d.log : (d.error || 'brak dziennika');
+        pre.scrollTop = pre.scrollHeight;
+        panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
+      }
+      document.getElementById('log-close').addEventListener('click', () => {
+        document.getElementById('log-panel').hidden = true;
+      });
+
+      async function addTask(when) {
+        const kind = document.getElementById('q-kind').value;
+        const note = document.getElementById('q-note').value;
+        const r = await fetch('/api/queue', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ kind, note, when }),
+        });
+        const d = await r.json().catch(() => ({}));
+        qMsg.hidden = false;
+        qMsg.textContent = d.ok
+          ? (when === 'now' ? '✓ Uruchomione teraz' : '✓ Zlecone na ' + fmt(d.task.runAt))
+          : '⚠ Nie udało się dodać zadania';
+        document.getElementById('q-note').value = '';
+        loadQueue();
+      }
+      document.getElementById('q-night').addEventListener('click', () => addTask('night'));
+      document.getElementById('q-now').addEventListener('click', () => addTask('now'));
+
+      loadQueue();
+      setInterval(loadQueue, 15000);   // odświeżanie statusu w trakcie wykonywania
       load();
     </script>
   </Fragment>

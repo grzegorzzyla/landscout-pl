@@ -38,6 +38,11 @@ if [ -f "$DATA_DIR/criteria.md" ] && ! gosu "$RUN_AS" test -w "$DATA_DIR/criteri
   chmod 0644 "$DATA_DIR/criteria.md" 2>/dev/null || true
 fi
 
+# --- stan kolejki -------------------------------------------------------------------
+# Katalog powstaje jako root (entrypoint działa przed gosu), więc od razu oddajemy go procesowi.
+mkdir -p /app/state/jobs /app/state/logs 2>/dev/null || true
+chown -R "$RUN_AS" /app/state 2>/dev/null || true
+
 # --- HOME procesu -------------------------------------------------------------------
 # Claude Code trzyma tu poświadczenia, sesje i historię rozmów (.claude to osobny wolumen).
 mkdir -p "$HOME_DIR/.claude" 2>/dev/null || true

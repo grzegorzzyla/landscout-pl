@@ -43,12 +43,17 @@ services:
       # LANDSCOUT_DEBUG=1 → entrypoint wypisze stan katalogów i wersje narzędzi przed startem.
       # Przydatne, gdy kontener wpada w pętlę restartów i nie da się wejść konsolą.
       LANDSCOUT_DEBUG: ${LANDSCOUT_DEBUG:-}
+      # Godzina, o której startują zadania zlecone „na noc" (0-23).
+      NIGHT_HOUR: ${NIGHT_HOUR:-3}
     volumes:
       # Dane = jedyne źródło prawdy. Trzymane POZA kontenerem, żeby przeżyły każdą przebudowę.
       - ${DATA_ROOT:-/volume1/docker/landscout}/properties:/app/properties
       # Poświadczenia Claude Code + historia rozmów. Bez tego wolumenu każde odtworzenie
       # kontenera = ponowne logowanie i utrata historii czatu.
       - ${DATA_ROOT:-/volume1/docker/landscout}/claude-home:/home/landscout/.claude
+      # Kolejka zadań i ich dzienniki. Osobno od properties/, bo to stan działania, nie dane
+      # o ofertach — i żeby zlecone zadanie przetrwało restart kontenera.
+      - ${DATA_ROOT:-/volume1/docker/landscout}/state:/app/state
       # Cache KOWR i trwały profil przeglądarki dla skanera Facebooka (sesja logowania).
       - ${DATA_ROOT:-/volume1/docker/landscout}/cache:/app/scripts/.cache
       - ${DATA_ROOT:-/volume1/docker/landscout}/fb-profile:/app/scripts/.fb_profile
