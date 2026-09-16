@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { PROJECT_DIR, resolveClaudeExeCached } from './runner';
 import { claudeEnv } from './claude-auth';
 import { notify } from './notify';
+import { readSettings, localLlm } from './settings';
 
 const STATE_DIR = process.env.STATE_DIR || '/app/state';
 const JOBS_DIR = join(STATE_DIR, 'jobs');
@@ -108,8 +109,18 @@ function buildPrompt(t: Task): string {
       (t.note ? `Uwagi użytkownika: ${t.note}. ` : '') +
       'Na koniec podaj jednym zdaniem: ile postów przeczytano i ile ofert dopisano.';
   }
+  // Gdy włączona ocena lokalnym modelem, podmieniamy TYLKO etap scoringu — orkiestracja,
+  // ingest i deep-dive zostają przy Claude, bo tam małe modele zawodzą.
+  const llm = localLlm();
+  const local = readSettings().localEval && llm.configured
+    ? 'Do etapu OCENY NIE używaj skilla properties-eval ani agentów — zamiast tego uruchom ' +
+      `scripts/eval_local.py (lokalny model, ${llm.model}) na pełnych rekordach z .md, ` +
+      'a wynik zapisz tak samo jak przy ocenie standardowej. Pozostałe etapy bez zmian. '
+    : '';
+
   return 'Użyj skilla properties-search: pełne wyszukiwanie wg properties/criteria.md, ' +
     'tryb autonomiczny (sam dopisz trafione). ' +
+    local +
     (t.note ? `Dodatkowe uwagi użytkownika: ${t.note}. ` : '') +
     'Po ocenie uruchom properties-deep-dive dla ofert z werdyktem "dopasowane" — bez tego ' +
     'ranking opiera się wyłącznie na opisach sprzedających. ' +

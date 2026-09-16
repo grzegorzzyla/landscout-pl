@@ -134,6 +134,14 @@ w `.gitignore` — baza ofert to prywatne dane użytkownika (PII z ogłoszeń) i
   `x = northing, y = easting`. Pomylenie ich daje wysokość innego miejsca albo `0` (punkt poza zasięgiem) —
   dlatego `_nmt_height(northing, easting)` ma taką sygnaturę, a dokładne `0.0` jest traktowane jako BRAK
   odczytu, nie jako poziom morza. Test kontrolny: Śnieżka ma wychodzić 1602,9 m.
+- `eval_local.py --records-file [--url --model --batch-size --compare-with]` — ocena ofert
+  **lokalnym modelem** przez API zgodne z OpenAI (llama.cpp/Ollama/vLLM). Ten sam kontrakt co skill
+  `properties-eval`, więc oba są wymienne. Sens: scoring to najdroższy etap pipeline'u (miliony
+  tokenów przy kilkuset ofertach), a jest w zasięgu modelu 27–30B — orkiestracji i oględzin zdjęć
+  NIE przenosimy. Rekord jest odchudzany przed wysłaniem (bez zdjęć i surowych danych portalu),
+  bo okno małego modelu jest cenne. `--compare-with` zestawia werdykty z oceną referencyjną —
+  decyzja o przejściu na lokalny model ma się opierać na liczbach, nie na wrażeniu.
+  Włącznik w panelu agentury (`/agentura`), adres w `LOCAL_LLM_URL`.
 - `geoportal_link.py` — link do krajowego geoportalu z identyfikatora działki (TERYT) lub z oferty.
 
 ## Skille

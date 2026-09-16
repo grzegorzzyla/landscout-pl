@@ -45,6 +45,26 @@ import Base from '../layouts/Base.astro';
     </section>
 
     <section class="panel">
+      <h3>Ocena lokalnym modelem</h3>
+      <p class="muted">
+        Ocena ofert to najdroższy etap — przy kilkuset ofertach idą na nią miliony tokenów,
+        podczas gdy orkiestracja i deep-dive są tanie. Przełącznik podmienia <strong>tylko
+        scoring</strong>; wyszukiwanie, ingest i analiza terenowa zostają przy Claude, bo tam
+        małe modele zawodzą (a deep-dive potrzebuje wizji).
+      </p>
+      <div id="llm-state" class="checks"></div>
+      <label class="menu-opt" style="padding-left:0;">
+        <input type="checkbox" id="opt-local-eval" /> Używaj lokalnego modelu do oceny
+      </label>
+      <p class="muted">
+        Zanim przestawisz się na stałe, puść oba na tej samej partii i porównaj werdykty:
+        <code>eval_local.py --compare-with ocena_claude.json</code>. Ocena Claude wyłapywała rzeczy
+        subtelne — „sprzedający sam chwali się bliskością S19", „przystanek kolejowy we wsi".
+        Jeśli lokalny model to gubi, oszczędność jest pozorna.
+      </p>
+    </section>
+
+    <section class="panel">
       <h3>Powiadomienia</h3>
       <p class="muted">
         Wysyłane po zakończeniu zadania z kolejki. Konfiguracja przez zmienne w Portainerze —
@@ -254,6 +274,36 @@ import Base from '../layouts/Base.astro';
         m.style.color = d.ok ? 'var(--good)' : 'var(--bad)';
       });
       loadNotif();
+
+      // --- lokalny model do oceny -----------------------------------------
+      const optLocal = document.getElementById('opt-local-eval');
+      async function loadLlm() {
+        const el = document.getElementById('llm-state');
+        try {
+          const d = await (await fetch('/api/settings')).json();
+          optLocal.checked = !!d.settings.localEval;
+          optLocal.disabled = !d.localLlm.configured;
+          el.innerHTML = '';
+          const row = document.createElement('div');
+          row.className = 'check ' + (d.localLlm.configured ? 'ok' : 'bad');
+          const n = document.createElement('strong');
+          n.textContent = (d.localLlm.configured ? '✓ ' : '✗ ') + 'Endpoint';
+          const sp = document.createElement('span');
+          sp.textContent = d.localLlm.configured
+            ? `${d.localLlm.url} · model: ${d.localLlm.model}`
+            : 'brak LOCAL_LLM_URL — ustaw zmienną w Portainerze, np. http://192.168.2.50:8080/v1';
+          row.appendChild(n); row.appendChild(sp);
+          el.appendChild(row);
+        } catch (e) { el.textContent = 'Nie udało się odczytać: ' + e.message; }
+      }
+      optLocal.addEventListener('change', async () => {
+        await fetch('/api/settings', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ localEval: optLocal.checked }),
+        });
+        loadLlm();
+      });
+      loadLlm();
 
       loadQueue();
       setInterval(loadQueue, 15000);   // odświeżanie statusu w trakcie wykonywania

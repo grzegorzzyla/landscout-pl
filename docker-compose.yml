@@ -51,6 +51,12 @@ services:
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       NTFY_URL: ${NTFY_URL:-}
       NTFY_TOKEN: ${NTFY_TOKEN:-}
+      # --- lokalny model do oceny (opcjonalny) ------------------------------
+      # Dowolny serwer z API zgodnym z OpenAI: llama.cpp, Ollama, vLLM. Samo ustawienie adresu
+      # niczego nie włącza — przełącznik jest w panelu agentury.
+      LOCAL_LLM_URL: ${LOCAL_LLM_URL:-}
+      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-local}
+      LOCAL_LLM_KEY: ${LOCAL_LLM_KEY:-}
     volumes:
       # Dane = jedyne źródło prawdy. Trzymane POZA kontenerem, żeby przeżyły każdą przebudowę.
       - ${DATA_ROOT:-/volume1/docker/landscout}/properties:/app/properties
