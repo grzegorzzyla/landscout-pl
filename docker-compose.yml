@@ -13,7 +13,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: landscout-pl:local
+    # Świadomie BEZ `image:` — nazwana etykieta powoduje, że `docker compose pull`
+    # (czyli „Pull and redeploy" w Portainerze) szuka obrazu w rejestrze i kończy się
+    # błędem "pull access denied". Obraz powstaje lokalnie z tego repo, nie jest nigdzie
+    # publikowany, więc niech compose nazwie go sam.
+    pull_policy: build
     container_name: landscout
     restart: unless-stopped
     ports:

@@ -93,9 +93,14 @@ rsync -a properties/listings properties/photos properties/criteria.md \
 
 ### 2. Stack w Portainerze
 
-*Stacks → Add stack → Repository*, adres tego repozytorium, gałąź `main`, plik
-`docker-compose.yml`. Obraz buduje się na NAS-ie — **żaden rejestr Dockera nie jest potrzebny**.
-Aktualizacja po commicie to „Pull and redeploy".
+*Stacks → Add stack → Repository*, adres tego repozytorium, plik `docker-compose.yml`.
+W polu *Repository reference* podaj pełną nazwę refa: **`refs/heads/main`** (samo `main`
+Portainer zgłasza jako „could not find ref").
+
+Obraz buduje się na NAS-ie — **żaden rejestr Dockera nie jest potrzebny**. Aktualizacja po
+commicie to „Pull and redeploy", ale **nie zaznaczaj opcji „Re-pull image"**: obraz nie istnieje
+w żadnym rejestrze, więc próba jego pobrania kończy się błędem `pull access denied`. Ma zostać
+pobrane repozytorium i przebudowany obraz, a nie ściągnięty gotowy.
 
 Zmienne najwygodniej wczytać z pliku zamiast wpisywać ręcznie: skopiuj `.env.example`
 do `.env`, uzupełnij i w Portainerze użyj *Environment variables → **Load variables from
