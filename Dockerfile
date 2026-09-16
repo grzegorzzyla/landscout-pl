@@ -14,16 +14,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONIOENCODING=utf-8 \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    # katalog projektu czytany przez site/src/server/runner.ts (PROJECT_DIR)
-    ASSISTANT_DIR=/app \
     # przeglądarki Playwrighta poza $HOME roota — inaczej użytkownik nie-root ich nie znajdzie
     PLAYWRIGHT_BROWSERS_PATH=/opt/playwright \
-    VIRTUAL_ENV=/opt/venv \
-    HOME=/home/landscout \
-    # Claude Code ustala katalog konfiguracji z wpisu w passwd (dla UID 1000 to `node` z obrazu
-    # bazowego), a NIE ze zmiennej HOME — sesje lądowałyby w /home/node/.claude, czyli poza
-    # wolumenem, i ginęły przy każdym odtworzeniu kontenera. Wskazujemy katalog wprost.
-    CLAUDE_CONFIG_DIR=/home/landscout/.claude
+    VIRTUAL_ENV=/opt/venv
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 python3-venv ca-certificates git gosu tini tzdata \
@@ -88,8 +81,19 @@ RUN mkdir -p /home/landscout /app/properties \
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh /app/bin/cdp || true
 
+# Zmienne APLIKACYJNE trzymamy na końcu, za kosztownymi krokami (pip, Chromium, npm).
+# Docker unieważnia cache od zmienionej warstwy W DÓŁ, więc dopisanie tu jednej zmiennej
+# przebudowuje tylko ostatnie warstwy — a nie ponowne pobieranie Chromium, co kosztuje minuty.
+ENV ASSISTANT_DIR=/app \
+    HOME=/home/landscout \
+    HOST=0.0.0.0 \
+    PORT=4321 \
+    # Claude Code ustala katalog konfiguracji z wpisu w passwd (dla UID 1000 to `node` z obrazu
+    # bazowego), a NIE ze zmiennej HOME — sesje lądowałyby w /home/node/.claude, czyli poza
+    # wolumenem, i ginęły przy odtworzeniu kontenera. Wskazujemy katalog wprost.
+    CLAUDE_CONFIG_DIR=/home/landscout/.claude
+
 EXPOSE 4321
-ENV HOST=0.0.0.0 PORT=4321
 
 # tini jako PID 1 — Claude Code i Chromium potrafią zostawiać procesy potomne.
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
