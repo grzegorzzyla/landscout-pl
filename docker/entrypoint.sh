@@ -25,7 +25,17 @@ chown "$RUN_AS" "$DATA_DIR" "$DATA_DIR/listings" "$DATA_DIR/listings/deleted" \
       "$DATA_DIR/photos" 2>/dev/null || true
 
 if [ ! -f "$DATA_DIR/criteria.md" ] && [ -f /app/properties.default/criteria.md ]; then
-  cp /app/properties.default/criteria.md "$DATA_DIR/criteria.md" 2>/dev/null || true
+  install -m 0644 /app/properties.default/criteria.md "$DATA_DIR/criteria.md" 2>/dev/null || true
+fi
+
+# Kryteria muszą być czytelne i zapisywalne dla procesu — czyta je pre-screen i ocena, a strona
+# docelowo pozwoli je edytować. Sprawdzamy przy KAŻDYM starcie, nie tylko przy tworzeniu: plik
+# mógł zostać na wolumenie po wcześniejszym uruchomieniu z innymi prawami (wolumen przeżywa
+# przebudowy obrazu, więc raz źle nadane prawa zostają na zawsze).
+if [ -f "$DATA_DIR/criteria.md" ] && ! gosu "$RUN_AS" test -w "$DATA_DIR/criteria.md" 2>/dev/null; then
+  echo "[landscout] naprawiam prawa: criteria.md (był niedostępny dla ${RUN_AS})"
+  chown "$RUN_AS" "$DATA_DIR/criteria.md" 2>/dev/null || true
+  chmod 0644 "$DATA_DIR/criteria.md" 2>/dev/null || true
 fi
 
 # --- HOME procesu -------------------------------------------------------------------
