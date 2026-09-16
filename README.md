@@ -97,16 +97,18 @@ rsync -a properties/listings properties/photos properties/criteria.md \
 `docker-compose.yml`. Obraz buduje się na NAS-ie — **żaden rejestr Dockera nie jest potrzebny**.
 Aktualizacja po commicie to „Pull and redeploy".
 
-W sekcji *Environment* ustaw:
+Zmienne najwygodniej wczytać z pliku zamiast wpisywać ręcznie: skopiuj `.env.example`
+do `.env`, uzupełnij i w Portainerze użyj *Environment variables → **Load variables from
+.env file***.
 
 | zmienna | znaczenie |
 |---|---|
-| `DATA_ROOT` | `/volume1/docker/landscout` |
-| `ACCESS_PASSWORD` | hasło do strony |
+| `DATA_ROOT` | katalog danych na NAS-ie, np. `/volume1/docker/landscout` |
+| `PUID` / `PGID` | właściciel tego katalogu — sprawdź poleceniem `id` |
+| `ACCESS_PASSWORD` | hasło do bramki strony |
 | `SESSION_SECRET` | `openssl rand -hex 32` |
-| `PUID` / `PGID` | z polecenia `id` |
 | `ALLOWED_HOSTS` | domena tailnetu, np. `.tail1234.ts.net` |
-| `TS_AUTHKEY` | klucz z panelu Tailscale (Settings → Keys) |
+| `TS_AUTHKEY` | klucz z panelu Tailscale (Settings → Keys), najlepiej *reusable* |
 | `TS_ROUTES` | podsieć LAN, np. `192.168.2.0/24` |
 
 Po starcie kontenera Tailscale **zatwierdź trasę** w panelu (Machines → … → Edit route
