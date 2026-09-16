@@ -135,12 +135,24 @@ export function startClaudeJob(kind: Job['kind'], label: string, prompt: string,
     ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'text'],
     { cwd: PROJECT_DIR, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
   );
-  child.stdout.on('data', (d) => (job.output += d.toString()));
-  child.stderr.on('data', (d) => (job.output += d.toString()));
+  // Wyjście leci do obiektu zadania (odpytywanego przez /api/job/<id>) ORAZ na stdout procesu.
+  // To drugie jest istotne przy uruchomieniu w kontenerze: nie ma tam terminala, a log kontenera
+  // jest jedynym miejscem, gdzie widać, czy zadanie ruszyło i na czym się wywróciło. Bez tego
+  // log milczy niezależnie od wyniku, co wygląda jak „nic się nie stało".
+  const tee = (d: Buffer) => {
+    const text = d.toString();
+    job.output += text;
+    for (const line of text.split('\n')) {
+      if (line.trim()) console.log(`[job ${id}][${kind}] ${line}`);
+    }
+  };
+  child.stdout.on('data', tee);
+  child.stderr.on('data', tee);
   child.on('error', (e) => {
     job.status = 'error';
     job.error = e.message;
     job.finishedAt = Date.now();
+    console.error(`[job ${id}][${kind}] BŁĄD uruchomienia: ${e.message}`);
   });
   child.on('close', (code) => {
     job.finishedAt = Date.now();
@@ -154,9 +166,11 @@ export function startClaudeJob(kind: Job['kind'], label: string, prompt: string,
     }
     if (code === 0 && job.result?.ok !== false) {
       job.status = 'done';
+      console.log(`[job ${id}][${kind}] zakończone OK`);
     } else {
       job.status = 'error';
       job.error = job.result?.error || `Claude Code zakończył się kodem ${code}`;
+      console.error(`[job ${id}][${kind}] BŁĄD: ${job.error}`);
     }
   });
   return id;
