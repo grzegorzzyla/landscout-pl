@@ -1,0 +1,109 @@
+---
+export const prerender = false;
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Agentura">
+  <header>
+    <a class="iconbtn" href="/" aria-label="Powrót do listy">←</a>
+    <h1>⚙️ Agentura</h1>
+    <button class="btn ghost" id="refresh" type="button">Odśwież</button>
+  </header>
+
+  <main class="agent-main">
+    <section class="panel">
+      <h3>Stan</h3>
+      <p class="muted" id="auth-source">sprawdzanie…</p>
+      <div id="checks" class="checks">
+        <p class="muted">Kontrole uruchamiają realne procesy (m.in. start Chromium) — to potrwa kilkanaście sekund.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h3>Token Claude Code</h3>
+      <p class="muted">
+        Agentura działa na Twojej subskrypcji. Gdy token wygaśnie, wygeneruj nowy na swoim
+        komputerze poleceniem <code>claude setup-token</code> i wklej poniżej — bez przebudowy
+        kontenera i bez edycji zmiennych w Portainerze.
+      </p>
+      <div class="row" style="gap:8px; align-items:stretch;">
+        <input type="password" id="token" placeholder="wklej token…" autocomplete="off" style="flex:1;" />
+        <button class="btn" id="save-token" type="button">Zapisz</button>
+        <button class="btn ghost" id="clear-token" type="button">Usuń</button>
+      </div>
+      <p class="muted" id="token-msg" hidden></p>
+      <p class="muted">
+        Token zapisuje się na wolumenie z prawami 0600 i ma pierwszeństwo przed zmienną
+        <code>CLAUDE_CODE_OAUTH_TOKEN</code>. Nigdy nie jest odsyłany z powrotem do przeglądarki.
+      </p>
+    </section>
+  </main>
+
+  <Fragment slot="scripts">
+    <script is:inline>
+      const checksEl = document.getElementById('checks');
+      const srcEl = document.getElementById('auth-source');
+      const msg = document.getElementById('token-msg');
+
+      function showMsg(text, ok) {
+        msg.hidden = false;
+        msg.textContent = (ok ? '✓ ' : '⚠ ') + text;
+        msg.style.color = ok ? 'var(--good)' : 'var(--bad)';
+      }
+
+      async function load() {
+        checksEl.innerHTML = '<p class="muted">Sprawdzanie… (start Chromium trwa najdłużej)</p>';
+        srcEl.textContent = 'sprawdzanie…';
+        try {
+          const r = await fetch('/api/agent/status');
+          const d = await r.json();
+          srcEl.textContent = 'Autoryzacja: ' + d.authSource;
+          checksEl.innerHTML = '';
+          for (const c of d.checks) {
+            const row = document.createElement('div');
+            row.className = 'check ' + (c.ok ? 'ok' : 'bad');
+            const name = document.createElement('strong');
+            name.textContent = (c.ok ? '✓ ' : '✗ ') + c.name;
+            const detail = document.createElement('span');
+            detail.textContent = c.detail;
+            row.appendChild(name);
+            row.appendChild(detail);
+            checksEl.appendChild(row);
+          }
+        } catch (e) {
+          checksEl.innerHTML = '<p class="muted">Nie udało się pobrać stanu: ' + e.message + '</p>';
+        }
+      }
+
+      document.getElementById('refresh').addEventListener('click', load);
+
+      document.getElementById('save-token').addEventListener('click', async () => {
+        const el = document.getElementById('token');
+        const token = el.value.trim();
+        if (!token) return showMsg('Wklej token', false);
+        const r = await fetch('/api/agent/token', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+        const d = await r.json().catch(() => ({}));
+        el.value = '';
+        if (d.ok) { showMsg('Token zapisany — źródło: ' + d.source, true); load(); }
+        else showMsg(d.error || 'Nie udało się zapisać', false);
+      });
+
+      document.getElementById('clear-token').addEventListener('click', async () => {
+        const r = await fetch('/api/agent/token', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'clear' }),
+        });
+        const d = await r.json().catch(() => ({}));
+        showMsg(d.ok ? 'Token usunięty — źródło: ' + d.source : 'Nie udało się usunąć', !!d.ok);
+        load();
+      });
+
+      load();
+    </script>
+  </Fragment>
+</Base>

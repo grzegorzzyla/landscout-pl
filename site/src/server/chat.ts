@@ -10,6 +10,7 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { PROJECT_DIR, resolveClaudeExeCached } from './runner';
+import { claudeEnv } from './claude-auth';
 
 export type ChatEvent =
   | { type: 'session'; sessionId: string }
@@ -65,6 +66,7 @@ export function runChatTurn(
       cwd: PROJECT_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
+      env: claudeEnv(),   // token wymieniony w panelu działa od razu, bez redeployu
     });
 
     let buf = '';

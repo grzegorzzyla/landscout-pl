@@ -1,6 +1,7 @@
 // Backend strony działek: uruchamianie skili Claude Code headless (zadania w tle z monitorowaniem)
 // oraz deterministycznych skryptów Pythona (status/notatki). Server-only (Node) — używane przez /api/*.
 import { spawn, execFileSync } from 'node:child_process';
+import { claudeEnv } from './claude-auth';
 import { readdirSync, existsSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import os from 'node:os';
@@ -141,7 +142,8 @@ export function startClaudeJob(kind: Job['kind'], label: string, prompt: string,
   const child = spawn(
     exe,
     ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'text'],
-    { cwd: PROJECT_DIR, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
+    // env z claudeEnv(): token wymieniony w panelu agentury działa bez redeployu stacku
+    { cwd: PROJECT_DIR, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, env: claudeEnv() },
   );
   // Wyjście leci do obiektu zadania (odpytywanego przez /api/job/<id>) ORAZ na stdout procesu.
   // To drugie jest istotne przy uruchomieniu w kontenerze: nie ma tam terminala, a log kontenera
