@@ -33,7 +33,13 @@ if [ -d "$CLIENT_DIR" ]; then
 fi
 
 # Diagnostyka na start — najczęstsze przyczyny „nie działa" widać od razu w logu kontenera.
-echo "[landscout] ASSISTANT_DIR=${ASSISTANT_DIR:-/app}  UID=$PUID GID=$PGID"
+# Świadomie czytamy z `id`, a nie ze zmiennych: groupmod/usermod wyżej kończą się na `|| true`,
+# więc wypisanie PUID/PGID pokazywałoby zamiar, nie wynik — i maskowało nieudaną zmianę.
+echo "[landscout] ASSISTANT_DIR=${ASSISTANT_DIR:-/app}  $(id landscout)"
+if [ "$(id -u landscout)" != "$PUID" ] || [ "$(id -g landscout)" != "$PGID" ]; then
+  echo "[landscout] UWAGA: nie udało się ustawić UID/GID na $PUID:$PGID — zapisy do zamontowanych"
+  echo "[landscout]        katalogów mogą padać na braku uprawnień (sprawdź: ls -ln \$DATA_ROOT)"
+fi
 echo "[landscout] ofert w bazie: $(ls -1 "$DATA_DIR/listings"/*.md 2>/dev/null | wc -l | tr -d ' ')"
 if command -v claude >/dev/null 2>&1; then
   echo "[landscout] Claude Code: $(command -v claude)"
