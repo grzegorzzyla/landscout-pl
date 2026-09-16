@@ -35,7 +35,7 @@ fi
 # Diagnostyka na start — najczęstsze przyczyny „nie działa" widać od razu w logu kontenera.
 # Świadomie czytamy z `id`, a nie ze zmiennych: groupmod/usermod wyżej kończą się na `|| true`,
 # więc wypisanie PUID/PGID pokazywałoby zamiar, nie wynik — i maskowało nieudaną zmianę.
-echo "[landscout] ASSISTANT_DIR=${ASSISTANT_DIR:-/app}  $(id landscout)"
+echo "[landscout] ASSISTANT_DIR=${ASSISTANT_DIR:-/app}  uid=$(id -u landscout) gid=$(id -g landscout)"
 if [ "$(id -u landscout)" != "$PUID" ] || [ "$(id -g landscout)" != "$PGID" ]; then
   echo "[landscout] UWAGA: nie udało się ustawić UID/GID na $PUID:$PGID — zapisy do zamontowanych"
   echo "[landscout]        katalogów mogą padać na braku uprawnień (sprawdź: ls -ln \$DATA_ROOT)"
@@ -54,6 +54,18 @@ if command -v claude >/dev/null 2>&1; then
   fi
 else
   echo "[landscout] UWAGA: nie znaleziono Claude Code — ingest/deep-dive/czat nie zadziałają"
+fi
+
+# Gdy brakuje artefaktu strony, `node` rzuca samo "Cannot find module" — bez informacji, co
+# faktycznie jest w obrazie. Pokazujemy stan katalogu, bo to jedyna rzecz, która tu pomaga.
+ENTRY=/app/site/dist/server/entry.mjs
+if [ ! -f "$ENTRY" ]; then
+  echo "[landscout] BŁĄD: brak $ENTRY — obraz nie zawiera zbudowanej strony."
+  echo "[landscout] --- /app/site ---"; ls -la /app/site 2>&1 | head -20
+  echo "[landscout] --- /app/site/dist ---"; ls -la /app/site/dist 2>&1 | head -20
+  echo "[landscout] Zbuduj obraz ponownie BEZ cache (w Portainerze: Pull and redeploy"
+  echo "[landscout] z zaznaczonym 'Re-pull image' / opcją --no-cache)."
+  exit 1
 fi
 
 exec gosu landscout "$@"

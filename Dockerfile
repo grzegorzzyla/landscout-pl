@@ -58,6 +58,15 @@ RUN mkdir -p /app/properties.default \
 
 RUN cd site && npm run build
 
+# Twardy warunek: brak artefaktu ma wywalić BUDOWANIE, a nie wyprodukować obraz, który dopiero
+# przy starcie krzyczy "Cannot find module". Gdy build Astro cicho nie wyprodukuje entry.mjs,
+# chcemy zobaczyć to tutaj, razem z zawartością katalogu.
+RUN test -f /app/site/dist/server/entry.mjs || { \
+      echo "BŁĄD: build Astro nie wyprodukował site/dist/server/entry.mjs"; \
+      echo "--- /app/site ---"; ls -la /app/site; \
+      echo "--- /app/site/dist ---"; ls -laR /app/site/dist 2>/dev/null | head -40; \
+      exit 1; }
+
 # Użytkownik nie-root; PUID/PGID dopasujesz w compose do właściciela katalogu na NAS-ie.
 RUN useradd --create-home --home-dir /home/landscout --shell /bin/bash landscout \
     && mkdir -p /home/landscout/.claude /app/properties \
