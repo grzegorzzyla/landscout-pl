@@ -33,10 +33,33 @@ const err = Astro.url.searchParams.has('e');
       <p>Strona prywatna — podaj hasło dostępu.</p>
       {err && <p class="err">Błędne hasło — spróbuj ponownie.</p>}
       {configured ? (
-        <form method="POST" action="/api/auth/login">
+        <form method="POST" action="/api/auth/login" id="login-form">
           <input type="password" name="password" placeholder="hasło" autofocus autocomplete="current-password" />
           <button type="submit">Wejdź</button>
+          <p class="err" id="login-err" hidden>Błędne hasło — spróbuj ponownie.</p>
         </form>
+        <script is:inline>
+          // Wysyłamy JSON-em zamiast natywnym POST-em formularza: ochrona CSRF Astro odrzuca
+          // formularze, gdy Origin nie zgadza się z Host (tak bywa za mapowaniem portów w Dockerze).
+          // Atrybuty action/method zostają jako zapas dla przeglądarki bez JS.
+          document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const input = e.target.querySelector('input[name=password]');
+            const err = document.getElementById('login-err');
+            err.hidden = true;
+            try {
+              const r = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ password: input.value }),
+              });
+              if (r.ok) { location.href = '/'; return; }
+            } catch (_) { /* sieć padła — pokaż ten sam komunikat */ }
+            err.hidden = false;
+            input.value = '';
+            input.focus();
+          });
+        </script>
       ) : (
         <p class="warn">Hasło nie jest jeszcze ustawione (brak ACCESS_PASSWORD w&nbsp;.env).</p>
       )}
