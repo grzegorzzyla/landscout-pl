@@ -71,6 +71,8 @@ const allTags = [...new Set(entries.flatMap((e) => e.data.tags ?? []))].sort((a,
     <button data-act="search" type="button">🔎 Szukaj w sieci</button>
     <a href="/czat">💬 Czat z agenturą</a>
     <a href="/agentura">⚙️ Agentura (stan, token)</a>
+    <label class="menu-opt"><input type="checkbox" id="opt-sticky" /> 📌 Przyklejona mapa</label>
+    <label class="menu-opt"><input type="checkbox" id="opt-hover" /> 🖱 Mapa podąża za kursorem</label>
     <a href="/api/auth/logout">🚪 Wyloguj</a>
   </div>
 
@@ -242,6 +244,32 @@ const allTags = [...new Set(entries.flatMap((e) => e.data.tags ?? []))].sort((a,
     const grid = document.getElementById('grid');
     const cards = [...document.querySelectorAll('.card')];
 
+    // --- ustawienia widoku mapy -------------------------------------------
+    // Obie opcje są wygodne na dużym monitorze i uciążliwe na małym, więc domyślną wartość
+    // dobieramy wg szerokości okna, a wybór użytkownika zapamiętujemy.
+    const OPTS_KEY = 'landscout-map-opts';
+    const wideScreen = window.innerWidth >= 1100;
+    let mapOpts = { sticky: wideScreen, hover: wideScreen };
+    try {
+      const saved = JSON.parse(localStorage.getItem(OPTS_KEY) || 'null');
+      if (saved && typeof saved === 'object') mapOpts = { ...mapOpts, ...saved };
+    } catch (_) { /* uszkodzony wpis — zostają domyślne */ }
+
+    const optSticky = document.getElementById('opt-sticky');
+    const optHover = document.getElementById('opt-hover');
+
+    function applyMapOpts() {
+      document.body.classList.toggle('map-sticky', !!mapOpts.sticky);
+      optSticky.checked = !!mapOpts.sticky;
+      optHover.checked = !!mapOpts.hover;
+      localStorage.setItem(OPTS_KEY, JSON.stringify(mapOpts));
+      // mapa zmienia wysokość widoczną przy przyklejaniu — Leaflet musi przeliczyć rozmiar
+      setTimeout(() => map.invalidateSize(), 120);
+    }
+    optSticky.addEventListener('change', () => { mapOpts.sticky = optSticky.checked; applyMapOpts(); });
+    optHover.addEventListener('change', () => { mapOpts.hover = optHover.checked; applyMapOpts(); });
+    applyMapOpts();
+
     // --- najechanie na kafelek → podświetlenie punktu na mapie -------------
     // Mapa przewija się TYLKO wtedy, gdy punkt jest poza widokiem — inaczej przy przesuwaniu myszą
     // po liście skakałaby przy każdym kafelku i nie dałoby się jej czytać.
@@ -250,6 +278,7 @@ const allTags = [...new Set(entries.flatMap((e) => e.data.tags ?? []))].sort((a,
     let hoveredId = null;
 
     function hoverPoint(id, on) {
+      if (!mapOpts.hover) return;
       const mk = markers[id];
       if (!mk) return;
       if (!on) { mk.setStyle(MARK_NORMAL); return; }
@@ -266,7 +295,7 @@ const allTags = [...new Set(entries.flatMap((e) => e.data.tags ?? []))].sort((a,
       c.addEventListener('mouseenter', () => {
         if (hoveredId && hoveredId !== id) hoverPoint(hoveredId, false);
         hoveredId = id;
-        c.classList.toggle('no-geo', !markers[id]);   // oferta bez współrzędnych — nie ma co pokazać
+        c.classList.toggle('no-geo', mapOpts.hover && !markers[id]);  // plakietka tylko gdy podążanie włączone
         hoverPoint(id, true);
       });
       c.addEventListener('mouseleave', () => {

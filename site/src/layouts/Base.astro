@@ -58,13 +58,13 @@ const { title = 'Działki' } = Astro.props;
       .hidden { display:none !important; }
       /* przycisk pełnego ekranu mapy */
       .map-wrap { position: relative; }
-      /* Mapa zostaje widoczna przy przewijaniu listy ofert. Nagłówek jest już sticky, więc mapa klei
-         się POD nim — jego wysokość zmienia się, gdy filtry zawijają się do drugiej linii, dlatego
-         --header-h wyliczamy w JS. Na telefonie wyłączone: mapa zjadałaby pół ekranu przy przewijaniu. */
-      @media (min-width: 641px) {
-        .map-wrap { position: sticky; top: var(--header-h, 56px); z-index: 2; background: var(--bg);
-          box-shadow: 0 6px 12px -8px rgba(0,0,0,.6); }
-      }
+      /* Mapa zostaje widoczna przy przewijaniu listy — ale tylko gdy użytkownik tego chce.
+         Sterowane klasą na <body> (ustawienie w menu), a nie samym media query: na dużym monitorze
+         to wygoda, na małym mapa zjada pół ekranu. Domyślną wartość dobiera JS wg szerokości okna.
+         Nagłówek jest sticky, więc mapa klei się POD nim — jego wysokość (--header-h) liczymy w JS,
+         bo filtry zawijają się do drugiej linii przy węższym oknie. */
+      body.map-sticky .map-wrap { position: sticky; top: var(--header-h, 56px); z-index: 2;
+        background: var(--bg); box-shadow: 0 6px 12px -8px rgba(0,0,0,.6); }
       .map-fs { position:absolute; top:8px; right:8px; z-index:600; background:var(--panel); color:var(--text);
         border:1px solid var(--border); border-radius:8px; padding:5px 9px; font-size:12px; cursor:pointer; }
       .map-fs:hover{ border-color:var(--accent); }
@@ -81,6 +81,9 @@ const { title = 'Działki' } = Astro.props;
       .check.bad strong { color: var(--bad); }
       .check span { color: var(--muted); font-family: ui-monospace, monospace; font-size:12px;
         word-break: break-word; }
+      .menu-opt { display:flex; align-items:center; gap:8px; padding:8px 12px; cursor:pointer;
+        font-size:14px; }
+      .menu-opt input { width:auto; margin:0; }
       .joblog { max-height: 420px; overflow:auto; background:#0a0c10; border:1px solid var(--border);
         border-radius:8px; padding:10px; font-size:12px; font-family: ui-monospace, monospace;
         white-space: pre-wrap; word-break: break-word; }
