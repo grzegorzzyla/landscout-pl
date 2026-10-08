@@ -134,6 +134,15 @@ w `.gitignore` — baza ofert to prywatne dane użytkownika (PII z ogłoszeń) i
   której ta linia przechodzi). Przekroczenie progu → ostrzeżenie w `notes`. Osobne, małe zapytanie —
   `pois` (udogodnienia, 15 km) i `nuisances` (uciążliwości, 2,5 km) to dwa różne zapytania, bo łączne
   wpadało w timeout Overpassa.
+  Sekcja **`landslides`** (`--landslide-radius`, domyślnie 500 m) — **osuwiska z SOPO** (PGI-PIB przez
+  `cbdgmapa.pgi.gov.pl`; `ikar3.pgi.gov.pl` stoi za Incapsulą i odbija zapytania). Karpaty fliszowe to
+  naprzemienne warstwy piaskowca i łupku — nasiąknięty łupek działa jak powierzchnia poślizgu, dlatego
+  ~95% polskich osuwisk leży właśnie tam, a z naszych lokalizacji dotyczy to **Dukli**. Warstwa 13 podaje
+  **stopień aktywności** (`aktywne ciągle|okresowo|nieaktywne`), 12 — tereny zagrożone. Serwis nie wspiera
+  `query`, tylko `identify`, a tolerancja jest w PIKSELACH — stąd `mapExtent`/`imageDisplay` dobierane tak,
+  by 200 px odpowiadało zadanemu promieniowi. **Najpierw pytamy warstwę `sopo_stan`** (czy gmina w ogóle
+  była kartowana): SOPO nie pokrywa całego kraju, poza Karpatami wyrywkowo, a „brak osuwisk w gminie
+  nieskartowanej" wygląda w wyniku identycznie jak teren czysty — `mapped: false` mówi to wprost.
   **NMT — kolejność osi:** `wgs84_to_pl1992()` zwraca `(easting, northing)`, a GUGiK `GetHByXY` oczekuje
   `x = northing, y = easting`. Pomylenie ich daje wysokość innego miejsca albo `0` (punkt poza zasięgiem) —
   dlatego `_nmt_height(northing, easting)` ma taką sygnaturę, a dokładne `0.0` jest traktowane jako BRAK

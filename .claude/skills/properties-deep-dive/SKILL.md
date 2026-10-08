@@ -178,6 +178,7 @@ Sekcja zapisywana do pliku (Markdown):
 **Działka (ULDK):** nr <…>, gmina <…>, powiat <…>, obręb <…>  [pole geom. ~<…> m²]
 **Teren (NMT):** <…> m n.p.m., nachylenie <…>% (<…>°), ekspozycja <…>
 **Odległości:** kolej <…> (<dist>), sklep <…> (<dist>), szpital <…> (<dist>), woda <…> (<dist>)
+**Osuwiska (SOPO):** <brak w promieniu … m / … form, w tym CZYNNE / gmina poza kartowaniem — brak danych>
 **Zdjęcia:** widok=<…>, otulina leśna=<…>, ekspozycja=<…>, otoczenie=<…>, nr działki z mapki=<… / brak>
 **Do weryfikacji ręcznej:** MPZP → <link> · transakcje → <…> · właściciel/KW → <…>
 **Linki:** geoportal <…> · mapa <…>
@@ -190,7 +191,8 @@ W czacie zwróć **skróconą** wersję (4–6 linijek) + link do ogłoszenia i 
 - **Budżet**: ~3–4 wywołania skryptów + ≤8 zdjęć. Po przekroczeniu — zwróć wynik częściowy z adnotacją,
   co pominięto (np. „POI niedostępne — Overpass rate-limit").
 - **Nie zgaduj na korzyść**: brak danych (zwłaszcza przy `coords_approx`) → oznacz „do weryfikacji",
-  nie podnoś werdyktu. Pole geom. mocno ≠ powierzchni z oferty → ostrzeż o trafieniu w inną parcelę.
+  nie podnoś werdyktu. Dotyczy to zwłaszcza osuwisk: `landslides.mapped=false` znaczy „gmina nie była
+  kartowana", a NIE „nie ma osuwisk" — wygląda w wyniku identycznie jak teren czysty, więc nazwij to wprost. Pole geom. mocno ≠ powierzchni z oferty → ostrzeż o trafieniu w inną parcelę.
 - **Zgłaszaj błędy źródeł wprost** (ULDK/NMT/Overpass) — sekcja `notes` z wyniku skryptu idzie do raportu.
 - **Zawsze z linkiem do ogłoszenia** przy prezentacji oferty.
 - **Zapis tylko przez `manage_listing.py`** — nigdy ręcznie w plikach `.md`.

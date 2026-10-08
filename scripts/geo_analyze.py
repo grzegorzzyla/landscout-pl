@@ -13,6 +13,8 @@ Zwraca na stdout JSON:
   "nuisances": {railway, road_major, cemetery, farm, industrial, quarry, landfill,      # UCIĄŻLIWOŚCI (2,5 km)
                 wastewater, wind, power_line: {what, name, dist_m} | null},
                 # odległość do linii (tory/drogi/linie NN) liczona do GEOMETRII, nie do centroidu
+  "landslides": {mapped, survey:{gmina,rok}, on_site:[...], nearby:[...],    # OSUWISKA (SOPO, 500 m)
+                 hazard_areas:[...]} | error,
   "links": {geoportal, mapy_google, osm, mpzp_hint, rcwin_hint, ekw_hint},
   "notes": [ "..." ]            # czego NIE dało się ustalić automatycznie
 }
@@ -21,6 +23,11 @@ Zwraca na stdout JSON:
 - Działka + admin:   ULDK GUGiK  (https://uldk.gugik.gov.pl/)        — GetParcelByXY, EPSG:4326 (lon,lat)
 - Wysokość terenu:   NMT GUGiK   (https://services.gugik.gov.pl/nmt/) — GetHByXY, EPSG:2180
 - POI/odległości:    Overpass API (OpenStreetMap)
+- Osuwiska:          SOPO PGI-PIB przez CBDG (https://cbdgmapa.pgi.gov.pl/arcgis/rest/services/geozagrozenia)
+  UWAGA: SOPO NIE pokrywa całego kraju — Karpaty są zmapowane niemal w całości, poza nimi pokrycie
+  jest wyrywkowe i projekt wciąż trwa. Dlatego najpierw pytamy warstwę „stan prac" (sopo_stan): brak
+  osuwisk w gminie NIEobjętej kartowaniem nie znaczy nic, a wyglądałby identycznie jak czysty teren.
+  Serwis ikar3.pgi.gov.pl stoi za Incapsulą i odbija zapytania — cbdgmapa.pgi.gov.pl odpowiada wprost.
 Przeznaczenie (MPZP), transakcje (RCiWN) i właściciel (KW) nie mają otwartego API — zwracamy
 deep-linki i wskazówki do ręcznej weryfikacji (sekcja "links"/"notes").
 """
@@ -563,6 +570,112 @@ def nuisance_notes(nui: dict) -> list[str]:
 
 
 # --- deep-linki / wskazówki do ręcznej weryfikacji ------------------------
+# --- OSUWISKA: SOPO (System Osłony Przeciwosuwiskowej, PGI-PIB) ----------------------
+# Karpaty fliszowe to naprzemienne warstwy piaskowców i łupków ułożone jak kanapka. Nasiąknięty
+# łupek działa jak powierzchnia poślizgu, więc ~95% polskich osuwisk leży właśnie tam — i dokładnie
+# tam leży Dukla z naszych kryteriów. Ogłoszenie o tym nie wspomni, a cena bywa kusząco niska.
+_SOPO = "https://cbdgmapa.pgi.gov.pl/arcgis/rest/services/geozagrozenia"
+_SOPO_LAYERS = "14,13,12"      # osuwiska, strefy aktywności (ze stopniem), tereny zagrożone
+
+
+def _sopo_coverage(lat: float, lon: float) -> dict | None:
+    """Czy gmina jest objęta kartowaniem SOPO. Bez tego cały wynik jest nieinterpretowalny."""
+    try:
+        r = common.http_get(f"{_SOPO}/sopo_stan/MapServer/0/query", params={
+            "geometry": f"{lon},{lat}", "geometryType": "esriGeometryPoint", "inSR": 4326,
+            "spatialRel": "esriSpatialRelIntersects", "outFields": "GMINA,POWIAT,WOJEWODZTWO,ROK_ZAKONCZENIA",
+            "returnGeometry": "false", "f": "json",
+        })
+        feats = r.json().get("features") or []
+    except Exception:
+        return None
+    if not feats:
+        return {}
+    a = feats[0].get("attributes") or {}
+    return {"gmina": a.get("GMINA"), "powiat": a.get("POWIAT"),
+            "wojewodztwo": a.get("WOJEWODZTWO"), "rok": a.get("ROK_ZAKONCZENIA")}
+
+
+def _sopo_identify(lat: float, lon: float, radius_m: int) -> list[dict]:
+    """identify w promieniu radius_m. Serwis nie wspiera `query`, a tolerancja jest w PIKSELACH,
+    więc dobieramy rozciągłość mapy tak, żeby 200 px == radius_m (800 px na 4*radius w poziomie)."""
+    m_per_px = (4 * radius_m) / 800.0
+    dlon = (4 * radius_m) / (111320.0 * max(math.cos(math.radians(lat)), 1e-6)) / 2
+    dlat = (600 * m_per_px) / 110540.0 / 2
+    r = common.http_get(f"{_SOPO}/sopo_obszary/MapServer/identify", params={
+        "geometry": json.dumps({"x": lon, "y": lat}), "geometryType": "esriGeometryPoint", "sr": 4326,
+        "layers": f"all:{_SOPO_LAYERS}", "tolerance": 200,
+        "mapExtent": f"{lon - dlon},{lat - dlat},{lon + dlon},{lat + dlat}",
+        "imageDisplay": "800,600,96", "returnGeometry": "false", "f": "json",
+    })
+    return r.json().get("results") or []
+
+
+def _sopo_form(res: dict) -> dict:
+    a = res.get("attributes") or {}
+    area = a.get("SHAPE.AREA")
+    try:
+        area_m2 = round(float(str(area).replace(",", ".")))
+    except Exception:
+        area_m2 = None
+    return {"layer": res.get("layerName"), "nr": a.get("Numer osuwiska") or a.get("Numer identyfikacyjny"),
+            "activity": a.get("Stopień aktywności"), "area_m2": area_m2}
+
+
+def fetch_landslides(lat: float, lon: float, radius: int = 500) -> dict:
+    out: dict = {"_radius_m": radius}
+    survey = _sopo_coverage(lat, lon)
+    if survey is None:
+        return {"error": "SOPO: usługa niedostępna — osuwisk NIE sprawdzono."}
+    out["mapped"] = bool(survey)
+    out["survey"] = survey or None
+    if not survey:
+        return out              # gmina poza kartowaniem: pytanie o formy nie ma sensu
+    try:
+        on_site = [_sopo_form(x) for x in _sopo_identify(lat, lon, 25)]
+        nearby = [_sopo_form(x) for x in _sopo_identify(lat, lon, radius)]
+    except Exception as exc:
+        out["error"] = f"SOPO: błąd odpytania ({type(exc).__name__}) — osuwisk NIE sprawdzono."
+        return out
+    seen_on = {(f["layer"], f["nr"]) for f in on_site}
+    out["on_site"] = on_site
+    out["nearby"] = [f for f in nearby if (f["layer"], f["nr"]) not in seen_on]
+    out["hazard_areas"] = [f for f in nearby if f["layer"] and "zagrożone" in f["layer"]]
+    return out
+
+
+def landslide_notes(ls: dict) -> list[str]:
+    """Uwagi do sekcji notes. Rozdzielamy trzy różne rzeczy, bo znaczą co innego:
+    teren pod kartowaniem bez osuwisk / osuwisko wprost na działce / brak danych w ogóle."""
+    notes: list[str] = []
+    if "error" in ls:
+        return [ls["error"]]
+    if not ls.get("mapped"):
+        return ["SOPO: gmina POZA zasięgiem kartowania osuwisk — brak danych NIE oznacza braku "
+                "zagrożenia. Projekt wciąż trwa; poza Karpatami pokrycie jest wyrywkowe. "
+                "Przy działce na stoku zweryfikuj ręcznie (geoportal.pgi.gov.pl/portal/page/portal/SOPO)."]
+    on, near = ls.get("on_site") or [], ls.get("nearby") or []
+    active = [f for f in on + near if (f.get("activity") or "").startswith("aktywne")]
+    if on:
+        kinds = ", ".join(sorted({f["layer"] for f in on if f.get("layer")}))
+        notes.append(f"UWAGA: punkt działki leży w obrębie form osuwiskowych SOPO ({kinds}). "
+                     f"To wyklucza zabudowę bez ekspertyzy geologicznej i obniża wartość gruntu.")
+    elif near:
+        notes.append(f"Osuwiska SOPO w promieniu {ls['_radius_m']} m: {len(near)} form. "
+                     f"Sama działka poza nimi — sprawdź, po której stronie stoku.")
+    if active:
+        stany = ", ".join(sorted({f["activity"] for f in active if f.get("activity")}))
+        notes.append(f"UWAGA: wśród nich osuwiska CZYNNE ({stany}) — ruch udokumentowany, nie historyczny.")
+    if ls.get("hazard_areas") and not on:
+        notes.append(f"Teren zagrożony ruchami masowymi (SOPO) w promieniu {ls['_radius_m']} m — "
+                     f"gmina może mieć ten obszar w rejestrze, co ogranicza zabudowę.")
+    if not on and not near and not ls.get("hazard_areas"):
+        yr = (ls.get("survey") or {}).get("rok")
+        notes.append(f"SOPO: brak osuwisk w promieniu {ls['_radius_m']} m "
+                     f"(gmina skartowana{', rok ' + str(yr) if yr else ''}).")
+    return notes
+
+
 def build_links(lat: float, lon: float, parcel: dict) -> dict:
     pid = parcel.get("id") if isinstance(parcel, dict) else None
     return {
@@ -582,7 +695,8 @@ def build_links(lat: float, lon: float, parcel: dict) -> dict:
 
 def analyze(lat: float, lon: float, radius: int = 15000, skip_pois: bool = False,
             offer_area: float | None = None, parcel_nos: list[str] | None = None,
-            region_names: list[str] | None = None, nuisance_radius: int = 2500) -> dict:
+            region_names: list[str] | None = None, nuisance_radius: int = 2500,
+            landslide_radius: int = 500) -> dict:
     notes: list[str] = []
     # by-XY: jednostki administracyjne (gmina/obręb) z okolicy punktu z ogłoszenia. Sam nr działki z
     # tego wywołania jest niewiarygodny (punkt = centroid miejscowości / adres agencji), ale gmina/powiat
@@ -700,6 +814,9 @@ def analyze(lat: float, lon: float, radius: int = 15000, skip_pois: bool = False
         notes.append(nuisances["error"])
     else:
         notes.extend(nuisance_notes(nuisances))
+    # OSUWISKA — tanie (2-3 zapytania HTTP), więc nie chowamy ich za --skip-pois, który wyłącza Overpassa
+    landslides = fetch_landslides(eff_lat, eff_lon, landslide_radius)
+    notes.extend(landslide_notes(landslides))
     notes.append("Przeznaczenie (MPZP/WZ), transakcje (RCiWN) i właściciel (KW) — brak otwartego API; "
                  "patrz links.mpzp_hint / rcwin_hint / ekw_hint (weryfikacja ręczna).")
     links = build_links(eff_lat, eff_lon, parcel)
@@ -714,6 +831,7 @@ def analyze(lat: float, lon: float, radius: int = 15000, skip_pois: bool = False
         "terrain": terrain,
         "pois": pois,
         "nuisances": nuisances,
+        "landslides": landslides,
         "links": links,
         "notes": notes,
     }
@@ -744,6 +862,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--radius", type=int, default=15000, help="promień szukania POI/udogodnień (m)")
     p.add_argument("--nuisance-radius", dest="nuisance_radius", type=int, default=2500,
                    help="promień szukania uciążliwości: tory, drogi, cmentarz, ferma, przemysł (m)")
+    p.add_argument("--landslide-radius", dest="landslide_radius", type=int, default=500,
+                   help="promień szukania osuwisk SOPO (m)")
     p.add_argument("--skip-pois", action="store_true", help="pomiń Overpass (szybciej)")
     p.add_argument("--parcel-no", dest="parcel_no", action="append",
                    help="nr działki WPROST z ogłoszenia (powtarzalny) — rozwiązywany w ULDK na realne "
@@ -766,7 +886,7 @@ def main(argv: list[str] | None = None) -> int:
         p.error("podaj --id albo --lat i --lon")
 
     result = analyze(lat, lon, radius=args.radius, skip_pois=args.skip_pois, offer_area=offer_area,
-                     nuisance_radius=args.nuisance_radius,
+                     nuisance_radius=args.nuisance_radius, landslide_radius=args.landslide_radius,
                      parcel_nos=args.parcel_no, region_names=region_names)
     if args.id:
         result["id"] = args.id
