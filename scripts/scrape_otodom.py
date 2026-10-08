@@ -13,15 +13,23 @@ Mechanika (zweryfikowana empirycznie):
 Otodom nie podaje współrzędnych w listingu — lat/lon zostają puste (uzupełniane
 geokodowaniem dopiero przy dodaniu pozycji do listy).
 
+Dwa tryby:
+- --location: sami budujemy ścieżkę i filtry (wyszukiwanie wg criteria.md),
+- --search-url: dostajemy GOTOWY adres strony wyników, skopiowany z przeglądarki. Wtedy filtry
+  (powierzchnia, cena, województwo, cena za m²) są już w adresie i NIE dokładamy swoich —
+  numer strony z adresu ignorujemy, bo skanujemy wynik od pierwszej strony.
+
 Użycie:
   python scrape_otodom.py --location "Kłodzko" --distance 15 \
       --area-min 1000 --area-max 3500 --price-max 700000 --max 100
+  python scrape_otodom.py --search-url "https://www.otodom.pl/pl/wyniki/sprzedaz/dzialka/podlaskie?areaMin=3000"
 """
 from __future__ import annotations
 
 import argparse
 import json
 import sys
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 from lxml import html as LH
 
@@ -179,7 +187,64 @@ def _fetch_page_html(url: str) -> tuple[str, dict | None]:
     return url, nd
 
 
+def _page_url(url: str, page: int) -> str:
+    """Ten sam adres wyników, ale z podmienionym numerem strony."""
+    parts = urlsplit(url)
+    q = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "page"]
+    q.append(("page", str(page)))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(q), ""))
+
+
+def _kind_from_url(url: str) -> tuple[str, str]:
+    """Typ i transakcja wprost ze ścieżki adresu — normalize() ich potrzebuje."""
+    path = urlsplit(url).path.lower()
+    transaction = "rent" if "/wynajem/" in path else "sale"
+    kind = "dom" if "/dom/" in path or "/domy/" in path else "dzialka"
+    return kind, transaction
+
+
+def scrape_search_url(url: str, max_records: int) -> tuple[list[dict], dict]:
+    """Listowanie z GOTOWEGO adresu wyników (wklejonego z przeglądarki).
+
+    Filtry siedzą już w adresie, więc niczego nie dokładamy. Numer strony z adresu
+    ignorujemy świadomie: „przeskanuj ten wynik" znaczy cały wynik, a nie akurat tę stronę,
+    na której użytkownik był, gdy kopiował link.
+    """
+    kind, transaction = _kind_from_url(url)
+    meta = {"source": "otodom", "search_url": url, "kind": kind, "transaction": transaction}
+    records: list[dict] = []
+    page, total_pages, total_items = 1, 1, None
+
+    while len(records) < max_records and page <= total_pages:
+        _, nd = _fetch_page_html(_page_url(url, page))
+        if nd is None:
+            if page == 1:
+                meta["error"] = "Brak danych ze strony wyników (blokada DataDome albo zły adres)."
+                return [], meta
+            meta["stopped_at_page"] = page       # część stron poszła — zwracamy, co jest
+            break
+        sa = nd.get("props", {}).get("pageProps", {}).get("data", {}).get("searchAds") or {}
+        items = sa.get("items") or []
+        if not items:
+            break
+        for it in items:
+            records.append(normalize(it, transaction, kind))
+        pagination = sa.get("pagination") or {}
+        total_pages = pagination.get("totalPages", 1) or 1
+        total_items = pagination.get("totalItems", total_items)
+        page += 1
+
+    records = common.dedupe(records)[:max_records]
+    meta["pages_read"] = page - 1
+    meta["total_available"] = total_items
+    meta["returned"] = len(records)
+    return records, meta
+
+
 def scrape(args) -> tuple[list[dict], dict]:
+    if getattr(args, "search_url", None):
+        return scrape_search_url(args.search_url, args.max)
+
     seg = "sprzedaz" if args.transaction == "sale" else "wynajem"
     kind_seg = "dom" if args.kind == "dom" else "dzialka"
     radius = snap_radius(args.distance)
@@ -256,7 +321,10 @@ def scrape(args) -> tuple[list[dict], dict]:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Listowanie działek z Otodom (__NEXT_DATA__).")
-    p.add_argument("--location", required=True, help="Miejscowość, np. 'Kłodzko'")
+    p.add_argument("--location", help="Miejscowość, np. 'Kłodzko' (wymagana bez --search-url)")
+    p.add_argument("--search-url", dest="search_url",
+                   help="Gotowy adres strony wyników Otodom, skopiowany z przeglądarki. "
+                        "Filtry bierzemy z adresu — --location/--distance/--area-*/--price-* są wtedy ignorowane.")
     p.add_argument("--kind", choices=["dzialka", "dom"], default="dzialka",
                    help="Typ nieruchomości: dzialka (domyślnie) lub dom (obejmuje siedliska/gospodarstwa)")
     p.add_argument("--distance", type=int, default=15, help="Promień w km (snap do 0/5/10/15/25/50/75)")
@@ -271,7 +339,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     common.setup_utf8()
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if not args.search_url and not args.location:
+        parser.error("podaj --location albo --search-url")
     records, meta = scrape(args)
     common.emit(records, meta)
     return 0

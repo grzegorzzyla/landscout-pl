@@ -125,8 +125,12 @@ const allTags = [...new Set(entries.flatMap((e) => e.data.tags ?? []))].sort((a,
 
   <div id="addlink-modal" class="modal" hidden>
     <div class="modal-box">
-      <h3>Dodaj ofertę z linku</h3>
+      <h3>Dodaj z linku</h3>
       <input id="add-url" type="url" placeholder="link OLX / Otodom / Morizon / adresowo / gethome" />
+      <p class="muted" style="margin:6px 0 0; font-size:.85em;">
+        Pojedyncze ogłoszenie albo CAŁA strona wyników z filtrami — wtedy zamiast jednej oferty
+        rusza skan listy (pre-screen wg kryteriów → ingest rokujących → ocena).
+      </p>
       <div class="row" style="justify-content:flex-end; gap:8px;">
         <button class="btn ghost" id="addlink-cancel" type="button">Anuluj</button>
         <button class="btn" id="addlink-ok" type="button">Zatwierdź</button>
@@ -457,7 +461,7 @@ const allTags = [...new Set(entries.flatMap((e) => e.data.tags ?? []))].sort((a,
       const url = addUrl.value.trim();
       if (!/^https?:\/\//i.test(url)) { window.assistantToast('Podaj poprawny link http(s)', { err: true, hide: 5000 }); return; }
       addlinkModal.hidden = true;
-      window.runJob('/api/add', { url }, 'Dodawanie oferty z linku');
+      window.runJob('/api/add', { url }, 'Dodawanie oferty z linku', { reloadDelay: 1500 });
     });
     addUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') addlinkOk.click(); });
 

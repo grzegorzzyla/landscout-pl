@@ -308,7 +308,9 @@ const { title = 'Działki' } = Astro.props;
           if (!res.ok || !res.jobId) return toast('Błąd: ' + (res.error || 'brak jobId'), { err: true, hide: 8000 });
           if (res.alreadyRunning) toast('To zadanie już trwa dla tej oferty — czekam na wynik.', { spin: true });
           pollJobs && pollJobs();  // natychmiast pokaż w rogu
-          watchJob(res.jobId, label, opts.reloadDelay);
+          // Serwer może doprecyzować etykietę — np. gdy po wklejonym linku okaże się,
+          // że to strona wyników i zamiast jednej oferty rusza skan całej listy.
+          watchJob(res.jobId, res.label || label, opts.reloadDelay);
         };
         // wznów obserwację trwającego zadania po wejściu na stronę / nawigacji
         try {

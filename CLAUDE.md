@@ -69,6 +69,10 @@ w `.gitignore` — baza ofert to prywatne dane użytkownika (PII z ogłoszeń) i
   (domyślnie `dzialka`); `dom` obejmuje domy/siedliska/gospodarstwa. Dla `kind=dom` rekord `area_m2` to
   powierzchnia **działki/terenu** (pow. budynku w `raw.house_area_m2`); kategorie/filtry zweryfikowane
   empirycznie (OLX cat 18 + `filter_float_area`, Otodom segment `dom` + `terrainAreaMin/Max`, gethome `/domy/`).
+  `scrape_otodom.py --search-url "<adres wyników>"` bierze **gotowy adres strony wyników** wklejony
+  z przeglądarki: filtry są już w adresie, więc żadnych swoich nie dokładamy, a numer strony z adresu
+  **ignorujemy** (skan zaczyna od pierwszej strony — „przeskanuj ten wynik" znaczy cały wynik, nie tę
+  jedną stronę, na której użytkownik kopiował link). Typ i transakcja idą ze ścieżki adresu.
 - `scrape_kowr.py` — **zasób KOWR** (nieruchomoscikowr.gov.pl): państwowa ziemia rolna z **przetargów**,
   niedostępna na żadnym portalu ogłoszeniowym. Ważne różnice od portali: cena to **wywoławcza**
   (`raw.price_kind`), część oferty to **dzierżawa** (`raw.distribution`; domyślnie zwracamy sprzedaż),
@@ -178,7 +182,9 @@ start` (host 0.0.0.0:4321; dodatkowe hosty dev-serwera w env `ALLOWED_HOSTS`). B
 
 Mutacje i wyzwalanie skili. `POST /api/status` (deterministyczne, `manage_listing set-status`);
 `POST /api/add` (ręczne dodanie z linku — odpala **Claude Code headless ze skillem `properties-ingest`**,
-by agent radził sobie z błędami portalu); `POST /api/deepdive` (odpala skill `properties-deep-dive`;
+by agent radził sobie z błędami portalu; **wklejony adres strony WYNIKÓW** zamiast pojedynczej oferty
+uruchamia skan całej listy: listing → pre-screen wg `criteria.md` → ingest tylko rokujących → ocena.
+Rozpoznanie per portal w `isResultsPage()`, przy wątpliwości traktujemy link jak jedną ofertę); `POST /api/deepdive` (odpala skill `properties-deep-dive`;
 można ponawiać); `POST /api/note` (notatki add/edit/delete — `manage_listing note-add|note-edit|note-delete`,
 frontmatter `notes[{id,ts,text}]`; UI aktualizuje DOM w miejscu, bez reloadu); `POST /api/tags`
 (deterministyczne, `manage_listing set-tags`; zastępuje całą listę tagów oferty — na karcie oferty popup
