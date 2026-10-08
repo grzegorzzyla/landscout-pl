@@ -2,7 +2,7 @@
 
 **Agentowy system wyszukiwania działek** — opisujesz wymarzoną działkę zwykłym tekstem, a system
 przeszukuje polskie portale ogłoszeniowe, ocenia każdą ofertę względem Twojego opisu (LLM, score 0–100
-z uzasadnieniem), analizuje teren w danych geodezyjnych (geoportal, model terenu, uciążliwości) i serwuje ranking
+z uzasadnieniem), analizuje teren w danych geodezyjnych (geoportal, model terenu, uciążliwości, osuwiska) i serwuje ranking
 na stronie, którą obsłużysz z telefonu.
 
 Zbudowany na **Claude Code** (skille + agenci) z rdzeniem niezawodności w postaci przetestowanych
@@ -27,7 +27,7 @@ portale (OLX / Otodom / Morizon / gethome) + adresowo + KOWR (przetargi) + grupy
         ▼
   deep-dive — geoportal (nr działki), wysokość/nachylenie/ekspozycja stoku (NMT),
               odległości do kolei/sklepu/szpitala/wody + uciążliwości (OSM),
-              linki do MPZP/KW
+              osuwiska (SOPO), linki do MPZP/KW
 ```
 
 Kluczowa idea: **twarde parametry filtrują, ale decyduje opis jakościowy**. W `properties/criteria.md`
@@ -57,9 +57,18 @@ Ocena LLM czyta pełny opis każdego ogłoszenia i punktuje właśnie względem 
   składowisko, oczyszczalnia, wiatraki, linie NN. Odległość do obiektów liniowych liczona do
   **geometrii**, nie do centroidu — tor przechodzący 200 m obok nie może raportować się jako odległy
   o kilkanaście kilometrów. Etap regularnie wywraca czołówkę rankingu zbudowaną na samych opisach.
+- **Osuwiska z SOPO** (System Osłony Przeciwosuwiskowej, PGI-PIB) — istotne w Karpatach fliszowych,
+  gdzie naprzemienne ławice piaskowca i łupku działają jak kanapka: nasiąknięty łupek staje się
+  powierzchnią poślizgu i stamtąd pochodzi większość polskich osuwisk. Raportujemy formy w promieniu
+  (domyślnie 500 m) wraz ze **stopniem aktywności** (czynne ciągle / okresowo / nieaktywne) oraz tereny
+  zagrożone ruchami masowymi. **Najpierw sprawdzamy, czy gmina była w ogóle kartowana** — SOPO nie
+  pokrywa całego kraju (poza Karpatami wyrywkowo, projekt trwa), a „brak osuwisk w gminie nieskartowanej"
+  wyglądałby identycznie jak teren czysty. Dlatego wynik rozróżnia *brak osuwisk* od *braku danych*.
 - **Strona z rankingiem** (SSR, dane czytane z dysku na każde żądanie): statusy
   (aktywne/obserwowane/ulubione/nieaktualne), tagi, notatki, sortowanie, galeria-lightbox, mapa
-  pełnoekranowa, dodawanie oferty z wklejonego linku. Działa wygodnie na telefonie (np. przez Tailscale).
+  pełnoekranowa, dodawanie oferty z wklejonego linku. Wklejony adres **strony wyników** (z własnymi
+  filtrami portalu) zamiast pojedynczej oferty uruchamia skan całej listy przez ten sam pipeline:
+  listing → pre-screen → ingest rokujących → ocena. Działa wygodnie na telefonie (np. przez Tailscale).
 - **Idempotentny ingest i dedup** po (portal, id ogłoszenia) — oferta raz skasowana nie wraca. Osobno
   wykrywane są **bliźniaki międzyportalowe** (ta sama oferta na OLX i Otodom ma inny id i inny URL):
   para (powierzchnia, cena) + potwierdzenie geograficzne; zachowany rekord przejmuje dokładniejsze
@@ -264,8 +273,11 @@ Szczegóły w [CLAUDE.md](CLAUDE.md) (dokumentacja robocza dla agenta — i najl
 - Pobrane oferty zawierają **dane osobowe ogłoszeniodawców** (nazwiska, telefony) i zdjęcia objęte
   prawami autorskimi — dlatego katalogi `properties/listings/` i `properties/photos/` są w `.gitignore`.
   **Nie publikuj swojej bazy ofert.**
-- Projekt powstał dla polskich portali i polskich danych geodezyjnych (GUGiK, MPZP) — poza Polską
+- Projekt powstał dla polskich portali i polskich danych geodezyjnych (GUGiK, SOPO, MPZP) — poza Polską
   wymaga adaptacji.
+- **Dane o osuwiskach (SOPO) nie pokrywają całego kraju.** Karpaty są zmapowane niemal w całości, poza
+  nimi kartowanie trwa i jest wyrywkowe. System mówi wprost, gdy gmina nie była objęta — ale to znaczy
+  „nie wiadomo", nie „bezpiecznie". Przy działce na stoku zweryfikuj ręcznie.
 
 ## Licencja
 
