@@ -235,6 +235,12 @@ const { title = 'Działki' } = Astro.props;
       .panel { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin:14px 0; }
       .notes :is(h2,h3){ margin-top:0; } .notes ul{ margin:6px 0; }
       .notes p{ margin:10px 0; } .notes p:first-child{ margin-top:0; }
+      code.kw{ font-size:.95em; letter-spacing:.02em; padding:1px 5px; border-radius:4px; background:#0003; }
+      .btn.tiny{ padding:1px 7px; font-size:.8em; margin-left:4px; }
+      .legal-flags{ display:flex; flex-wrap:wrap; gap:5px; margin:5px 0 2px; }
+      .lf{ font-size:.8em; padding:1px 7px; border-radius:10px; border:1px solid currentColor; }
+      .lf.bad{ color:#ff8a80; } .lf.warn{ color:#ffcc66; } .lf.ok{ color:#9ad48f; }
+      .tinynote{ font-size:.78em; line-height:1.35; margin-top:3px; }
       .back { display:inline-block; margin-bottom:8px; }
       @media (max-width: 640px){
         #map{ height: 38vh; } header h1{ font-size:16px; } .filters{ width:100%; }

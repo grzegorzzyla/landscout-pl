@@ -115,6 +115,19 @@ w `.gitignore` — baza ofert to prywatne dane użytkownika (PII z ogłoszeń) i
   **i** `deleted/` — do dedup w wyszukiwaniu (oferta raz skasowana nie wraca przez ingest). `set-section`
   zapisuje/zastępuje sekcję treści. `set-tags --tags "a,b,c"` zastępuje całą listę tagów oferty
   (frontmatter `tags[]`; trim + dedup case-insensitive; pusto = wyczyść). `fetch_photos.py --id` — pobranie zdjęć.
+- `legal_status.py` — **stan prawny z treści ogłoszenia** (używany przez `manage_listing` przy upsercie,
+  pole `legal` we frontmatterze). Wyciąga **numer KW z walidacją cyfry kontrolnej** (wagi 1/3/7 na 12
+  znakach; bez walidacji regex łapie numery katastralne) i flaguje wzmianki: `licytacja-komornicza`,
+  `wzmianka-hipoteka`, `sluzebnosc`, `deklaracja-bez-obciazen`. **Otwartej bazy KW nie ma** — EKW szuka
+  WYŁĄCZNIE po pełnym 13-znakowym numerze, nie po działce, a przeglądarka stoi za Incapsulą i działa na
+  POST, więc deep-link do konkretnej księgi jest niemożliwy (strona daje link do wyszukiwarki + numer do
+  skopiowania). **Dwie pułapki, obie odwracające sens:** zaprzeczenie przed wzmianką („żadnych zadłużeń
+  ani służebności" to deklaracja czystości, nie obciążenie) oraz kontekst finansowania („zabezpieczenie —
+  tylko hipoteka" to oferta ratalna sprzedającego, nie hipoteka na działce). Obie obsłużone przez
+  okno kontekstu; dodatkowo wycinany jest stały szablon obwieszczeń komorniczych, który inaczej dawał
+  flagę służebności każdej licytacji. Flagi to **cytaty ze sprzedającego**, nie fakty — potwierdza je
+  wyłącznie dział III i IV księgi. `manage_listing.py scan-legal` przelicza całą bazę (idempotentnie,
+  bez ruszania `date_updated`).
 - `geo_analyze.py --id|--lat/--lon [--parcel-no N …] [--region-name NAZWA …]` — pogłębiona analiza terenowa
   (rdzeń skilla `properties-deep-dive`): ULDK GUGiK (nr działki + województwo/powiat/gmina/obręb + geometria),
   NMT GUGiK (wysokość n.p.m., nachylenie, ekspozycja stoku — własna konwersja WGS84→PL-1992, bez `pyproj`),

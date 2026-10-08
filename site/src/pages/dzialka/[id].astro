@@ -18,6 +18,17 @@ const mapPhoto = d.map_photo ? '/' + d.map_photo : null;
 const mapIdx = d.map_photo && d.photos ? d.photos.indexOf(d.map_photo) : -1;
 const ddDate = d.deep_dive?.date ?? null;
 const notes = d.notes ?? [];
+// Stan prawny z treści ogłoszenia. To, co napisał sprzedający — potwierdza wyłącznie księga,
+// dlatego etykiety mówią „deklaruje" i „wzmianka", a nie stawiają tezy.
+const EKW_URL = 'https://przegladarka-ekw.ms.gov.pl/eukw_prz/KsiegiWieczyste/wyszukiwanieKsiegiWieczystej';
+const LEGAL_LABELS = {
+  'licytacja-komornicza': { txt: '⚖ licytacja komornicza', cls: 'bad' },
+  'wzmianka-hipoteka': { txt: 'wzmianka o hipotece', cls: 'warn' },
+  'sluzebnosc': { txt: 'służebność', cls: 'warn' },
+  'deklaracja-bez-obciazen': { txt: 'sprzedający deklaruje: bez obciążeń', cls: 'ok' },
+};
+const legalFlags = (d.legal?.flags ?? []).map((f) => LEGAL_LABELS[f] ?? { txt: f, cls: 'warn' });
+const kwNumber = d.legal?.kw_number ?? null;
 const parcel = d.parcel ?? null;
 
 const mediaIcon = (v) => (v === true || v === 'tak' ? '✓' : v == null || v === false ? '—' : String(v));
@@ -91,6 +102,22 @@ const point = d.lat != null && d.lon != null ? { lat: d.lat, lon: d.lon, approx:
         <dt>MPZP</dt><dd>{d.mpzp?.status ?? '—'}{d.mpzp?.link && <> · <a href={d.mpzp.link} target="_blank" rel="noopener">plan →</a></>}
           {d.mpzp?.note ? ` (${d.mpzp.note})` : ''}</dd>
         <dt>Media</dt><dd>prąd {mediaIcon(d.media?.prad)} · woda {mediaIcon(d.media?.woda)} · kanalizacja {mediaIcon(d.media?.kanalizacja)} · gaz {mediaIcon(d.media?.gaz)}</dd>
+        <dt>Stan prawny</dt><dd>
+          {kwNumber ? (
+            <>
+              <code class="kw" id="kw-number">{kwNumber}</code>
+              <button class="btn ghost tiny" id="kw-copy" type="button" title="Kopiuj numer księgi">kopiuj</button>
+              {' · '}<a href={EKW_URL} target="_blank" rel="noopener">otwórz EKW →</a>
+            </>
+          ) : (
+            <span class="muted">nr księgi nie podany w ogłoszeniu — poproś sprzedającego</span>
+          )}
+          {legalFlags.length > 0 && (
+            <div class="legal-flags">{legalFlags.map((f) => <span class={'lf ' + f.cls}>{f.txt}</span>)}</div>
+          )}
+          <div class="muted tinynote">Z treści ogłoszenia. Obciążenia potwierdza wyłącznie
+            dział III (służebności, egzekucja) i IV (hipoteki) księgi wieczystej.</div>
+        </dd>
         <dt>Dodano / akt.</dt><dd class="muted">{d.date_added ?? '—'} / {d.date_updated ?? '—'}</dd>
       </dl>
     </div>
@@ -217,6 +244,17 @@ const point = d.lat != null && d.lon != null ? { lat: d.lat, lon: d.lon, approx:
           window.setStatus(id, b.dataset.st, { deepdiveIfNone: b.dataset.st === 'favorite' && !hasDD })));
       document.getElementById('dd-run')?.addEventListener('click', () =>
         window.runJob('/api/deepdive', { id }, 'Pogłębiona analiza'));
+
+      // Numer księgi do schowka. EKW nie da się otworzyć linkiem na konkretnej księdze
+      // (POST + Incapsula), więc numer wkleja się ręcznie — przycisk oszczędza przepisywanie.
+      document.getElementById('kw-copy')?.addEventListener('click', async (e) => {
+        const txt = document.getElementById('kw-number')?.textContent?.trim();
+        if (!txt) return;
+        try { await navigator.clipboard.writeText(txt); } catch { return; }
+        const b = e.currentTarget, old = b.textContent;
+        b.textContent = 'skopiowano ✓';
+        setTimeout(() => (b.textContent = old), 1500);
+      });
 
       // --- tagi: edycja (popup z zaznaczaniem istniejących + dopisywaniem nowych) ---
       const tagsModal = document.getElementById('tags-modal');

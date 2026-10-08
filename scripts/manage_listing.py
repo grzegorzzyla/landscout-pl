@@ -37,6 +37,7 @@ from typing import Any
 import yaml
 
 import common
+import legal_status
 
 LISTINGS_DIR = os.path.join(common.PROJECT_DIR, "properties", "listings")
 DELETED_DIR = os.path.join(LISTINGS_DIR, "deleted")  # oferty SKASOWANE — poza listą/stroną, ale brane do dedup
@@ -56,7 +57,7 @@ KEY_ORDER = [
     "id", "source", "source_id", "source_type", "added_by", "url", "status", "score", "seen", "seen_at",
     "title", "kind", "price", "price_per_m2", "area_m2", "land_type", "transaction", "plot_type",
     "location", "lat", "lon", "coords_approx", "owner_type",
-    "contact", "mpzp", "media", "notes", "tags", "parcel", "terrain", "deep_dive",
+    "contact", "mpzp", "media", "legal", "notes", "tags", "parcel", "terrain", "deep_dive",
     "images", "photos", "cover", "map_photo",
     "date_created", "date_added", "date_updated",
 ]
@@ -269,6 +270,16 @@ def upsert_record(record: dict, source_type: str = "listing",
             if coords:
                 fm["lat"], fm["lon"] = coords
                 fm["coords_approx"] = True
+
+    # STAN PRAWNY z treści ogłoszenia: numer KW (z walidacją cyfry kontrolnej) + wzmianki.
+    # Liczone przy każdym upsercie, bo opis bywa aktualizowany przez sprzedającego. Pole `legal`
+    # wyliczamy w całości — gdy sprzedający usunął numer z opisu, ma zniknąć i u nas, zamiast
+    # zostawać jako nieaktualna „pewna" informacja.
+    legal = legal_status.from_record(fm)
+    if legal:
+        fm["legal"] = legal
+    else:
+        fm.pop("legal", None)
 
     # wpis do historii
     if created:
@@ -683,6 +694,36 @@ def cmd_dedupe(args) -> int:
     return 0
 
 
+def scan_legal_all() -> dict:
+    """Przelicz sygnały prawne dla WSZYSTKICH ofert. Idempotentne — wolno puszczać wielokrotnie."""
+    changed, with_kw, flagged = [], 0, 0
+    for listing_id in list_ids():
+        fm, body = load_listing(listing_id)
+        before = fm.get("legal")
+        legal = legal_status.from_record(fm)
+        if legal:
+            fm["legal"] = legal
+        else:
+            fm.pop("legal", None)
+        after = fm.get("legal")
+        if legal.get("kw_number"):
+            with_kw += 1
+        if legal.get("flags"):
+            flagged += 1
+        if before != after:
+            # date_updated NIE ruszamy: to przeliczenie z już posiadanych danych, a nie zmiana
+            # oferty — inaczej całe sortowanie „wg aktualizacji" skoczyłoby na jednym przebiegu.
+            save_listing(listing_id, fm, body)
+            changed.append({"id": listing_id, "legal": after})
+    return {"scanned": len(list_ids()), "changed": len(changed),
+            "with_kw": with_kw, "flagged": flagged, "details": changed}
+
+
+def cmd_scan_legal(args) -> int:
+    print(json.dumps(scan_legal_all(), ensure_ascii=False, indent=2))
+    return 0
+
+
 def log_history(listing_id: str, text: str) -> None:
     fm, body = load_listing(listing_id)
     body = _append_to_section(body, "Historia", f"- {_today()} {text}")
@@ -809,6 +850,9 @@ def build_parser() -> argparse.ArgumentParser:
     dl = sub.add_parser("delete", help="Przenieś ofertę do listings/deleted (skasowana; przywrócenie ręczne)")
     dl.add_argument("--id", required=True)
     dl.set_defaults(func=cmd_delete)
+
+    sl = sub.add_parser("scan-legal", help="Przelicz stan prawny (nr KW + wzmianki) dla wszystkich ofert")
+    sl.set_defaults(func=cmd_scan_legal)
 
     ks = sub.add_parser("known-sources", help="(source, source_id, url) z listings + deleted — do dedup")
     ks.set_defaults(func=cmd_known)

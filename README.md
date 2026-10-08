@@ -64,6 +64,11 @@ Ocena LLM czyta pełny opis każdego ogłoszenia i punktuje właśnie względem 
   zagrożone ruchami masowymi. **Najpierw sprawdzamy, czy gmina była w ogóle kartowana** — SOPO nie
   pokrywa całego kraju (poza Karpatami wyrywkowo, projekt trwa), a „brak osuwisk w gminie nieskartowanej"
   wyglądałby identycznie jak teren czysty. Dlatego wynik rozróżnia *brak osuwisk* od *braku danych*.
+- **Stan prawny z ogłoszenia** — numer księgi wieczystej (z walidacją cyfry kontrolnej) i wzmianki
+  o licytacji komorniczej, hipotece, służebności albo deklaracji „bez obciążeń". Otwartej bazy KW nie
+  ma: EKW wyszukuje wyłącznie po pełnym numerze księgi, nie po działce — więc system podaje numer
+  gotowy do skopiowania i link do wyszukiwarki, a sprawdzenie działu III i IV zostaje po stronie
+  człowieka. Flagi są **cytatem ze sprzedającego**, nie faktem.
 - **Strona z rankingiem** (SSR, dane czytane z dysku na każde żądanie): statusy
   (aktywne/obserwowane/ulubione/nieaktualne), tagi, notatki, sortowanie, galeria-lightbox, mapa
   pełnoekranowa, dodawanie oferty z wklejonego linku. Wklejony adres **strony wyników** (z własnymi
