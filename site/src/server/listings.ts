@@ -28,5 +28,11 @@ export function readAllListings(): Listing[] {
 }
 
 export function renderMarkdown(md: string): string {
-  return marked.parse(md || '', { async: false }) as string;
+  // Deep-dive i ocena zapisują wpisy jako kolejne linie "**Etykieta:** treść". Markdown skleja takie
+  // linie w JEDEN akapit, więc cała analiza wychodziła ścianą tekstu, w której nie da się odnaleźć
+  // pojedynczej informacji. Rozdzielamy je pustą linią już przy renderowaniu — nie przez edycję .md,
+  // bo plików z bazą nie ruszamy ręcznie, a poprawka ma objąć też analizy zapisane wcześniej.
+  const spaced = (md || '').replace(/\n(?=\*\*[^*\n]+:\*\*)/g, '\n\n');
+  // breaks: pojedynczy enter to realne łamanie linii — tak, jak wygląda w pliku .md.
+  return marked.parse(spaced, { async: false, breaks: true }) as string;
 }

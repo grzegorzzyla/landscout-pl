@@ -173,15 +173,23 @@ Jeśli z karty/opisu jednoznacznie wynika **rodzaj działki**, ustaw/popraw go (
 `manage_listing.py set --id <id> --field land_type --value <rolna|siedliskowa|budowlana>`.
 
 ## Output (do sekcji ## Analiza pogłębiona + zwięzłe podsumowanie w czacie)
-Sekcja zapisywana do pliku (Markdown):
+Sekcja zapisywana do pliku (Markdown) — **każdy wpis oddzielony pustą linią**, inaczej Markdown
+skleja je w jeden akapit i analiza robi się nieczytelna:
 ```
 **Działka (ULDK):** nr <…>, gmina <…>, powiat <…>, obręb <…>  [pole geom. ~<…> m²]
+
 **Teren (NMT):** <…> m n.p.m., nachylenie <…>% (<…>°), ekspozycja <…>
+
 **Odległości:** kolej <…> (<dist>), sklep <…> (<dist>), szpital <…> (<dist>), woda <…> (<dist>)
+
 **Osuwiska (SOPO):** <brak w promieniu … m / … form, w tym CZYNNE / gmina poza kartowaniem — brak danych>
+
 **Zdjęcia:** widok=<…>, otulina leśna=<…>, ekspozycja=<…>, otoczenie=<…>, nr działki z mapki=<… / brak>
+
 **Do weryfikacji ręcznej:** MPZP → <link> · transakcje → <…> · właściciel/KW → <…>
+
 **Linki:** geoportal <…> · mapa <…>
+
 **Werdykt po pogłębieniu:** <potwierdza/obniża/podnosi ocenę wstępną> — <1–2 zdania>
 > Zastrzeżenie: współrzędne <dokładne|przybliżone (centroid miejscowości)> — <konsekwencje>.
 ```
